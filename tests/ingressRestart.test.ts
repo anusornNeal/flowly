@@ -23,7 +23,7 @@ test('external token survives restart, rejects unauthenticated capture before re
   const png=await sharp({create:{width:8,height:8,channels:3,background:'#123456'}}).png().toBuffer();
   const boundary='FLOWLY_BOUNDARY';
   const fields={projectId,sourceId:'sender',captureId:'capture-once'};
-  const parts=Object.entries(fields).map(([key,value])=>Buffer.from('--'+boundary+'\r\nContent-Disposition: form-data; name="'+key+'"\r\n\r\n'+value+'\r\n'));
+  const parts:Buffer[]=Object.entries(fields).map(([key,value])=>Buffer.from('--'+boundary+'\r\nContent-Disposition: form-data; name="'+key+'"\r\n\r\n'+value+'\r\n'));
   parts.push(Buffer.from('--'+boundary+'\r\nContent-Disposition: form-data; name="file"; filename="actual.png"\r\nContent-Type: image/png\r\n\r\n'));
   parts.push(png,Buffer.from('\r\n--'+boundary+'--\r\n'));
   const data=Buffer.concat(parts);
