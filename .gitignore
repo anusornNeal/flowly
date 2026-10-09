@@ -1,0 +1,12 @@
+node_modules/
+dist/
+apps/web/dist/
+coverage/
+data/
+*.db
+*.db-*
+.env
+*.local
+logs/
+.playwright/
+.worktrees/
