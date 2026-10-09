@@ -45,6 +45,12 @@ test('CLI discovery, JSON stdin/file, pagination and dry-run rollback share exac
   const input={projectId:id,title:'Via stdin',description:'from piping'};
   const created=await invoke(root,'task.create',['--input=-'],JSON.stringify(input));
   assert.equal(created.code,0,JSON.stringify(created.stderr));
+  const context=await invoke(root,'task.context',['--id='+created.stdout.result.id]);
+  assert.equal(context.code,0);
+  assert.equal(context.stdout.result.task.id,created.stdout.result.id);
+  assert.equal(context.stdout.result.task.status,'backlog');
+  assert.ok(Array.isArray(context.stdout.result.blockers));
+  assert.ok(context.stdout.result.nextActions.includes('task.transition'));
   const pathToInput=path.join(root,'task.json');
   fs.writeFileSync(pathToInput,JSON.stringify({projectId:id,title:'Via file'}));
   const file=await invoke(root,'task.create',['--input=@'+pathToInput]);
