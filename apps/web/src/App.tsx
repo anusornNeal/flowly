@@ -39,6 +39,8 @@ export default function App(){
  const [taskReason,setTaskReason]=useState('');
  const [checkText,setCheckText]=useState('');
  const [bugText,setBugText]=useState('');
+ const [bugFilter,setBugFilter]=useState<'open'|'resolved'|'all'>('open');
+ const [selectedBugId,setSelectedBugId]=useState('');
  const [taskEdit,setTaskEdit]=useState<{title:string;description:string;acceptanceCriteria:string;verificationStep:string}>({title:'',description:'',acceptanceCriteria:'',verificationStep:''});
  const [previewName,setPreviewName]=useState('');
  const [previewResetKey,setPreviewResetKey]=useState(0);
@@ -75,6 +77,8 @@ export default function App(){
  const activeCase=cases.find(c=>c.id===selectedCase);
  const caseImage=snapshot?.screenshots.find(s=>s.id===activeCase?.evidenceId);
  const taskCases=cases.filter(c=>c.taskId===selectedTask);
+ const visibleBugs=(detail?.bugs||[]).filter(b=>bugFilter==='all'||b.status===bugFilter);
+ const selectedBug=visibleBugs.find(b=>b.id===selectedBugId)||visibleBugs[0];
  const counts=Object.fromEntries(lanes.map(lane=>[lane,tasks.filter(t=>t.status===lane).length]));
  const filteredTasks=tasks.filter(t=>(t.title+' '+t.displayId+' '+t.description).toLowerCase().includes(search.toLowerCase()));
  const currentSnapshot=useCallback(async(id:string)=>{
@@ -128,7 +132,7 @@ export default function App(){
   }catch(error){notify(error instanceof Error?error.message:String(error),true);}
   finally{setBusy(false);}
  };
- const chooseTask=(id:string)=>{setSelectedTask(id);setPage('task');setTab('summary');};
+ const chooseTask=(id:string)=>{setSelectedTask(id);setPage('task');setTab('summary');setSelectedBugId('');setBugFilter('open');};
  const choosePreview=(id:string)=>{setSelectedPreview(id);setPage('preview');setSelectedCase('');};
  const createProject=async(e:FormEvent)=>{
   e.preventDefault();setBusy(true);
@@ -336,11 +340,26 @@ export default function App(){
       {activeTask.status!=='done'&&!activeTask.parentId&&<form className="row-form" onSubmit={e=>{e.preventDefault();void doAction('task.subtask',{projectId,parentId:activeTask.id,title:taskTitle}).then(()=>setTaskTitle(''));}}>
        <input required placeholder="New subtask" value={taskTitle} onChange={e=>setTaskTitle(e.target.value)}/><button className="primary-button"><Plus size={15}/> Add</button></form>}
      </section>}
-     {tab==='bugs'&&<section className="panel padded"><div className="mini-eyebrow">DEFECT TRACKING</div><h2>Bug threads</h2>
-      {detail?.bugs.map(b=><div className="bug-entry" key={b.id}><header><Pill tone={b.status==='open'?'red':'green'}>{b.status}</Pill><strong>{b.title}</strong><span>{b.occurrences.length} findings</span></header>
+     {tab==='bugs'&&<section className="panel padded"><div className="section-row"><div className="mini-eyebrow">DEFECT TRACKING</div>
+      <Pill tone={detail?.bugs.some(b=>b.status==='open')?'red':'green'}>{detail?.bugs.filter(b=>b.status==='open').length||0} unresolved</Pill></div>
+      <h2>Bug threads</h2>
+      <div className="segmented" role="group" aria-label="Filter bug threads">
+       {(['open','resolved','all'] as const).map(filter=><button key={filter} type="button" className={bugFilter===filter?'active':''}
+        aria-pressed={bugFilter===filter} onClick={()=>{setBugFilter(filter);setSelectedBugId('');}}>{filter==='open'?'Active':filter==='resolved'?'Resolved':'All'}</button>)}
+      </div>
+      {visibleBugs.map(b=><div className="bug-entry" key={b.id}><header><Pill tone={b.status==='open'?'red':'green'}>{b.status}</Pill><strong>{b.title}</strong><span>{b.occurrences.length} findings</span></header>
        <p>{b.description}</p><small>Latest: {dateTime(b.updatedAt)}</small>
-       {b.status==='open'&&activeTask.status!=='done'&&<button className="outline-button" onClick={()=>void doAction('task.bug.resolve',{id:b.id,reason:taskReason})}>Resolve with evidence</button>}</div>)}
-      {!detail?.bugs.length&&<Empty title="No embedded bugs" body="Review rejection and explicit QA FAIL create linked findings."/>}
+       <div className="action-wrap"><button type="button" className="outline-button" aria-pressed={selectedBug?.id===b.id}
+        onClick={()=>setSelectedBugId(b.id)}>{selectedBug?.id===b.id?'Showing history':'View history'}</button>
+       {b.status==='open'&&activeTask.status!=='done'&&<button className="outline-button" onClick={()=>void doAction('task.bug.resolve',{id:b.id,reason:taskReason})}>Resolve with evidence</button>}</div></div>)}
+      {!visibleBugs.length&&<Empty title={bugFilter==='open'?'No active bugs':bugFilter==='resolved'?'No resolved bugs':'No embedded bugs'} body="Review rejection and explicit QA FAIL create linked findings."/>}
+      {selectedBug&&<div className="bug-entry" aria-label="Selected bug history"><header><strong>{selectedBug.title} · History</strong><Pill>{selectedBug.origin}</Pill></header>
+       {selectedBug.occurrences.map((finding,index)=><div key={finding.timestamp+'-'+index} className="bug-finding">
+        <small>{dateTime(finding.timestamp)} · {finding.actor} via {finding.channel}</small><p>{finding.detail}</p>
+        {finding.evidenceId&&<small>Screenshot evidence: {finding.evidenceId}</small>}
+        {finding.caseId&&<button type="button" className="text-button" onClick={()=>{setSelectedCase(finding.caseId!);setPage('preview');}}>
+         Inspect QA case {finding.caseId} <ArrowRight size={13}/></button>}
+       </div>)}</div>}
       {activeTask.status==='done'?<div className="post-done"><p>Completed tasks cannot be reopened. New defects become independent linked Bug tasks in Backlog.</p>
        <div className="row-form"><input placeholder="New post-Done defect" value={bugText} onChange={e=>setBugText(e.target.value)}/>
         <button className="primary-button" onClick={()=>void doAction('task.post-done-bug',{id:activeTask.id,title:bugText,description:taskReason})}>Create linked Bug</button></div>
