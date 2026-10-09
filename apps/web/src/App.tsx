@@ -147,7 +147,7 @@ export default function App(){
   setBusy(true);
   try{
    await upload(file,{projectId,taskId:qa.taskId,screenId:qa.screenId,caseId:qa.id});
-   await refresh();if(selectedTask)await loadDetail(selectedTask);setSelectedCase(qa.id);notify('Screenshot captured. Verdict remains pending.');
+   await refresh();if(selectedTask)await loadDetail(selectedTask);setSelectedCase(qa.id);notify(qa.verdict==='WAIVED'?'Screenshot recorded; waiver retained. Compare is awaiting review.':'Screenshot recorded; QA verdict is pending.');
   }catch(error){notify(String(error),true);}finally{setBusy(false);e.target.value='';}
  };
  const changeCase=async(id:string,verdict:'PASS'|'FAIL'|'WAIVED')=>{
@@ -449,20 +449,24 @@ export default function App(){
          <figure><img src={fileUrl(caseImage.id)} alt="Captured implementation UI"/><figcaption>Captured evidence</figcaption></figure></>}</div>:
        <Empty title="Waiting for screenshot evidence" body="Upload a real image against this case or use agent CLI / Web Recorder."/>}
       <label>QA decision reason<input placeholder="Required for WAIVED; recommended for FAIL" value={qaReason} onChange={e=>setQaReason(e.target.value)}/></label>
+      {activeCase.verdict==='WAIVED'&&<div className="good-note">Case is WAIVED for the current revision. New screenshots create a comparison awaiting review but do not cancel this waiver.</div>}
+      {activeCase.history?.length? <details className="qa-history"><summary>Case history ({activeCase.history.length})</summary>
+       {activeCase.history.slice().reverse().map((h,index)=><div key={index}>{dateTime(h.savedAt)} · {h.event} · {h.verdict||'PENDING'} · Revision {h.revisionId.slice(0,12)}</div>)}</details>:null}
       <div className="action-wrap"><button className="primary-button" disabled={busy||!caseImage} onClick={()=>void changeCase(activeCase.id,'PASS')}>Confirm PASS</button>
        <button className="danger-outline" disabled={busy||!caseImage} onClick={()=>void changeCase(activeCase.id,'FAIL')}>Confirm FAIL / Bug</button>
-       <button className="outline-button" disabled={busy} onClick={()=>void changeCase(activeCase.id,'WAIVED')}>WAIVE with reason</button></div>
-      <p className="muted">No capture, comparison, or retry automatically grants PASS, FAIL, or approval.</p>
+       <button className="outline-button" disabled={busy} onClick={()=>void changeCase(activeCase.id,'WAIVED')}>WAIVE with reason</button>
+       {activeCase.verdict==='WAIVED'&&<button className="danger-outline" disabled={busy} onClick={()=>{if(window.confirm('Cancel the current QA waiver and restore PENDING?'))void doAction('qa.waiver.cancel',{id:activeCase.id,reason:qaReason});}}>Cancel WAIVED</button>}</div>
+      <p className="muted">Comparison status: {activeCase.comparisonId?'Awaiting explicit confirmation or waived':'Needs evidence'}. No capture or comparison automatically grants PASS, FAIL, or approval.</p>
      </section>}
      <section className="panel padded"><div className="section-row"><div><div className="mini-eyebrow">UNASSIGNED EVIDENCE</div><h2>Screenshot Inbox</h2></div><Pill>{snapshot?.screenshots.filter(s=>!s.taskId).length||0}</Pill></div>
-      {(snapshot?.screenshots||[]).filter(s=>!s.taskId).map(s=><div className="inbox-row" key={s.id}><img src={fileUrl(s.id,true)} alt="Unassigned screenshot"/>
-       <div><strong>{s.id.slice(0,18)}</strong><small>{s.source} · {dateTime(s.createdAt)}</small></div>
+      {(snapshot?.screenshots||[]).filter(s=>s.source==='external'&&!s.taskId).map(s=><div className="inbox-row" key={s.id}><img src={fileUrl(s.id,true)} alt="Unassigned screenshot"/>
+       <div><strong>{s.id.slice(0,18)}</strong><small>{s.source} · {dateTime(s.createdAt)} · {s.intake?.reason||'Unassigned'}</small><small>Requested: {s.intake?.requestedTaskId||'–'} / {s.intake?.requestedScreenId||'–'}</small></div>
        <select aria-label="Assign task" defaultValue="" id={'assign-'+s.id}><option value="">Choose task</option>
         {tasks.map(t=><option key={t.id} value={t.id}>{t.displayId}: {t.title}</option>)}</select>
        <input aria-label="Screen ID" placeholder="Screen ID" id={'screen-'+s.id}/>
        <button className="outline-button" onClick={()=>void doAction('screenshot.assign',{id:s.id,taskId:(document.getElementById('assign-'+s.id) as HTMLSelectElement).value,
         screenId:(document.getElementById('screen-'+s.id) as HTMLInputElement).value})}>Assign</button></div>)}
-      {!snapshot?.screenshots.some(s=>!s.taskId)&&<p className="muted">No unassigned screenshots.</p>}
+      {!snapshot?.screenshots.some(s=>s.source==='external'&&!s.taskId)&&<p className="muted">No external unassigned screenshots.</p>}
      </section>
     </>}
     {page==='settings'&&<><header className="page-heading"><div><div className="eyebrow">LOCAL CONFIGURATION</div><h1>Settings<span className="dot">.</span></h1><p>Project context, optional external intake and manual storage control.</p></div></header>

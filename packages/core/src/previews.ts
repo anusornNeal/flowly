@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { LocalStore } from '../../db/src/store.js';
-import type { Actor, Preview, PreviewRevision, ScreenSpec, QaCase, Screenshot, Comparison, TaskRecord } from './models.js';
+import type { Actor, Preview, PreviewRevision, ScreenSpec, QaCase, QaCaseHistory, Screenshot, Comparison } from './models.js';
 import { DomainError, isViewport, now, requireText } from './models.js';
 import type { Tasks } from './tasks.js';
 import { inspectRendered } from '../../capture/src/renderer.js';
@@ -22,6 +22,14 @@ function validScreens(screens: ScreenSpec[]): ScreenSpec[] {
   seen.add(key);
   return {...s,id,stateId};
  });
+}
+export function qaTuple(value:Pick<QaCase,'screenId'|'stateId'|'viewport'>):string {
+ return [value.screenId,value.stateId,value.viewport.device,value.viewport.width,value.viewport.height].join(':');
+}
+export function caseHistory(c:QaCase,event:QaCaseHistory['event']):QaCaseHistory {
+ return {event,savedAt:now(),revisionId:c.revisionId,required:c.required,archived:c.archived,
+  verdict:c.verdict,verdictReason:c.verdictReason,verdictBy:c.verdictBy,verdictAt:c.verdictAt,
+  evidenceId:c.evidenceId,comparisonId:c.comparisonId};
 }
 export class Previews {
  constructor(private store:LocalStore,private tasks:Tasks) {}
@@ -93,38 +101,63 @@ export class Previews {
    approvedQuality:{checkedAt:t,warnings:warnings.map(w=>w.code+':'+w.screen+':'+w.state),
     acceptanceReason:options.warningReason?.trim(),checkedScreenCount:reports.length}};
   const nextPreview={...p,approvedRevisionId:revisionId,updatedAt:t};
-  const created:QaCase[]=[];
+  const active:QaCase[]=[];
   if(p.taskId){
    this.tasks.task(p.taskId);
-   for(const screen of validScreens(rev.screens)){
-    created.push({id:'qa_'+randomUUID(),projectId:p.projectId,taskId:p.taskId,previewId:p.id,revisionId,
-     screenId:screen.id,stateId:screen.stateId,viewport:structuredClone(screen.viewport),
-     required:screen.required!==false,updatedAt:t});
+   const historical=this.store.list<QaCase>('qa',{taskId:p.taskId})
+    .filter(c=>c.previewId===p.id);
+   const byTuple=new Map(historical.map(c=>[qaTuple(c),c]));
+   const requiredTuples=new Set(validScreens(rev.screens).map(s=>qaTuple({screenId:s.id,stateId:s.stateId,viewport:s.viewport})));
+   for(const screen of rev.screens){
+    const key=qaTuple({screenId:screen.id,stateId:screen.stateId,viewport:screen.viewport});
+    const previous=byTuple.get(key);
+    // Logical identity and Optional classification survive removed/reintroduced targets.
+    active.push(previous?{...previous,revisionId,archived:false,verdict:undefined,
+      verdictReason:undefined,verdictAt:undefined,verdictBy:undefined,
+      evidenceId:undefined,comparisonId:undefined,
+      history:[...(previous.history||[]),caseHistory(previous,'revision-superseded')],updatedAt:t}:
+      {id:'qa_'+randomUUID(),projectId:p.projectId,taskId:p.taskId,previewId:p.id,revisionId,
+       screenId:screen.id,stateId:screen.stateId,viewport:structuredClone(screen.viewport),
+       required:screen.required!==false,archived:false,history:[],updatedAt:t});
+   }
+   for(const old of historical){
+    if(!requiredTuples.has(qaTuple(old))&&!old.archived)
+     active.push({...old,archived:true,history:[...(old.history||[]),caseHistory(old,'revision-archived')],updatedAt:t});
    }
   }
+  let identicalConcurrentApproval=false;
   this.store.transaction(()=>{
+   const latest=this.get(previewId);
+   if(latest.approvedRevisionId===revisionId){identicalConcurrentApproval=true;return;}
+   if(latest.approvedRevisionId!==p.approvedRevisionId)
+    throw new DomainError('PREVIEW_REVISION_CONFLICT','Preview approval changed concurrently; reload and retry',409);
    this.store.put('revision',nextRevision);this.store.put('preview',nextPreview);
-   for(const c of created)this.store.put('qa',c);
-   this.audit(actor,p.projectId,'preview.approve',p.taskId,{previewId,revisionId,previousRevisionId:p.approvedRevisionId,caseIds:created.map(c=>c.id),qualityPassed:true,acceptedWarnings:nextRevision.approvedQuality?.warnings,warningReason:nextRevision.approvedQuality?.acceptanceReason});
+   for(const c of active)this.store.put('qa',c);
+   this.audit(actor,p.projectId,'preview.approve',p.taskId,{previewId,revisionId,
+    previousRevisionId:p.approvedRevisionId,caseIds:active.filter(c=>!c.archived).map(c=>c.id),
+    archivedCaseIds:active.filter(c=>c.archived).map(c=>c.id),qualityPassed:true,
+    acceptedWarnings:nextRevision.approvedQuality?.warnings,warningReason:nextRevision.approvedQuality?.acceptanceReason});
   });
-  return {preview:nextPreview,revision:nextRevision,cases:created};
+  if(identicalConcurrentApproval)
+   return {preview:this.get(previewId),revision:this.getRevision(revisionId),cases:this.cases({previewId})};
+  return {preview:nextPreview,revision:nextRevision,cases:active.filter(c=>!c.archived)};
  }
  cases(input:{projectId?:string;taskId?:string;previewId?:string;allRevisions?:boolean}){
   const list=this.store.list<QaCase>('qa',{projectId:input.projectId,taskId:input.taskId});
   return list.filter(c=>(!input.previewId||c.previewId===input.previewId)&&
-   (input.allRevisions||this.get(c.previewId).approvedRevisionId===c.revisionId));
+   (input.allRevisions||(!c.archived&&this.get(c.previewId).approvedRevisionId===c.revisionId)));
  }
  case(id:string){return found(this.store.get<QaCase>('qa',id),'QA Case');}
  setRequired(id:string,required:boolean,actor:Actor){
   const qa=this.case(id),p=this.get(qa.previewId);
-  if(p.approvedRevisionId!==qa.revisionId)throw new DomainError('STALE_QA_CASE','Cannot change requirement on superseded revision');
+  if(p.approvedRevisionId!==qa.revisionId||qa.archived)throw new DomainError('STALE_QA_CASE','Cannot change requirement on superseded revision');
   const next={...qa,required:Boolean(required),updatedAt:now()};
   this.store.transaction(()=>{this.store.put('qa',next);this.audit(actor,qa.projectId,'qa.requirement',qa.taskId,{caseId:id,required:next.required});});
   return next;
  }
  verdict(id:string,verdict:'PASS'|'FAIL'|'WAIVED',reason:string|undefined,actor:Actor){
   const c=this.case(id),task=this.tasks.task(c.taskId),p=this.get(c.previewId);
-  if(p.approvedRevisionId!==c.revisionId)throw new DomainError('STALE_QA_CASE','Evidence references old Approved Preview');
+  if(p.approvedRevisionId!==c.revisionId||c.archived)throw new DomainError('STALE_QA_CASE','Evidence references old Approved Preview');
   if(!['PASS','FAIL','WAIVED'].includes(verdict))throw new DomainError('INVALID_VERDICT','Verdict must be PASS FAIL or WAIVED');
   if(verdict==='WAIVED')requireText(reason,'waiver reason');
   if(verdict==='PASS'||verdict==='FAIL'){
@@ -134,13 +167,17 @@ export class Previews {
    const cmp=this.store.get<Comparison>('comparison',c.comparisonId);
    if(!cmp||cmp.revisionId!==c.revisionId||cmp.screenshotId!==shot.id)throw new DomainError('STALE_COMPARISON','Comparison does not match current Approved Preview');
   }
-  const next:QaCase={...c,verdict,verdictReason:reason?.trim(),verdictAt:now(),verdictBy:requireText(actor.actor,'actor'),updatedAt:now()};
+  // A repeated explicit verdict against the same evidence is an idempotent no-op.
+  if(c.verdict===verdict && (verdict!=='WAIVED'||c.verdictReason===reason?.trim()))
+   return {case:c,duplicate:true};
+  const next:QaCase={...c,verdict,verdictReason:reason?.trim(),verdictAt:now(),
+   verdictBy:requireText(actor.actor,'actor'),history:[...(c.history||[]),caseHistory(c,'verdict-changed')],updatedAt:now()};
   let bug:unknown;
   this.store.transaction(()=>{
    this.store.put('qa',next);
-   if(c.comparisonId){const comparison=this.store.get<Comparison>('comparison',c.comparisonId);
+   if(c.comparisonId && verdict!=='WAIVED'){const comparison=this.store.get<Comparison>('comparison',c.comparisonId);
     if(comparison)this.store.put('comparison',{...comparison,status:'decided'});}
-   this.audit(actor,c.projectId,'qa.verdict',c.taskId,{caseId:c.id,verdict,reason:next.verdictReason,evidenceId:c.evidenceId,revisionId:c.revisionId});
+   this.audit(actor,c.projectId,'qa.verdict',c.taskId,{caseId:c.id,verdict,oldVerdict:c.verdict||'PENDING',reason:next.verdictReason,evidenceId:c.evidenceId,comparisonId:c.comparisonId,revisionId:c.revisionId});
    if(verdict==='FAIL'){
     const title='Visual QA mismatch: '+c.screenId+' / '+c.stateId;
     if(task.status==='done'){
@@ -153,6 +190,18 @@ export class Previews {
    }
   });
   return {case:next,bug};
+ }
+ cancelWaiver(id:string,actor:Actor,reason?:string){
+  const c=this.case(id),p=this.get(c.previewId);
+  if(p.approvedRevisionId!==c.revisionId||c.archived)
+   throw new DomainError('STALE_QA_CASE','Cannot cancel waiver on historical QA Case',409);
+  if(c.verdict!=='WAIVED')throw new DomainError('NOT_WAIVED','This QA Case is not currently WAIVED',409);
+  const next:QaCase={...c,verdict:undefined,verdictReason:undefined,verdictAt:undefined,
+   verdictBy:undefined,history:[...(c.history||[]),caseHistory(c,'waiver-cancelled')],updatedAt:now()};
+  this.store.transaction(()=>{this.store.put('qa',next);this.audit(actor,c.projectId,'qa.waiver.cancel',c.taskId,{
+   caseId:c.id,revisionId:c.revisionId,previousVerdict:'WAIVED',comparisonId:c.comparisonId,
+   evidenceId:c.evidenceId,reason:reason?.trim()});});
+  return next;
  }
  private audit(actor:Actor,projectId:string,action:string,taskId?:string,evidence?:Record<string,unknown>){
   this.store.audit({projectId,taskId,action,actor:requireText(actor.actor,'actor'),channel:actor.channel,evidence});

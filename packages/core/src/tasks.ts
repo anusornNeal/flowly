@@ -97,6 +97,7 @@ export class Tasks {
   if(this.store.list<BugThread>('bug',{taskId:id}).some(b=>b.status==='open'))reasons.push('OPEN_BUGS');
   if(current.some(c=>c.required && (c.verdict!=='PASS' && c.verdict!=='WAIVED')))reasons.push('REQUIRED_QA_INCOMPLETE');
   if(current.some(c=>c.required && !c.revisionId))reasons.push('REQUIRED_QA_STALE');
+  if(this.store.list<Preview>('preview',{taskId:id}).some(p=>!p.approvedRevisionId))reasons.push('PREVIEW_APPROVAL_REQUIRED');
   if((task.reviewMode==='require-review'||task.reviewMode==='auto'&&assessRisk(task)!=='LOW')&&!task.reviewApproved)reasons.push('REVIEW_NOT_APPROVED');
   if(task.reviewMode==='skip-review'&&assessRisk(task)!=='LOW'&&!task.reviewSkipReason?.trim())reasons.push('REVIEW_SKIP_REASON_REQUIRED');
   return reasons;
@@ -104,7 +105,7 @@ export class Tasks {
  private currentQa(task:TaskRecord,cases:QaCase[]){
   return cases.filter(c=>{
    const preview=this.store.get<Preview>('preview',c.previewId);
-   return preview?.approvedRevisionId===c.revisionId;
+   return !c.archived&&preview?.approvedRevisionId===c.revisionId;
   });
  }
  transition(id:string,input:{to:Lane;reason?:string;forceDone?:boolean},actor:Actor){

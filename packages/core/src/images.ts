@@ -6,7 +6,7 @@ import type { LocalStore } from '../../db/src/store.js';
 import type { Actor, BugThread, Comparison, QaCase, Screenshot, TaskRecord, Preview, StorageTotals } from './models.js';
 import { DomainError, now, requireText } from './models.js';
 import type { Tasks } from './tasks.js';
-import type { Previews } from './previews.js';
+import { caseHistory, type Previews } from './previews.js';
 
 const MAX_EXTERNAL_BYTES=25*1024*1024;
 const MIME:Record<string,string>={png:'image/png',jpeg:'image/jpeg',webp:'image/webp'};
@@ -49,7 +49,7 @@ export class Images {
   if(!result)throw new DomainError('NOT_FOUND','Screenshot not found',404);
   return result;
  }
- inbox(projectId?:string){return this.list(undefined).filter(s=>!s.taskId&&(!projectId||s.projectId===projectId));}
+ inbox(projectId?:string){return this.list(undefined).filter(s=>s.source==='external'&&!s.taskId&&(!projectId||s.projectId===projectId));}
  private findDuplicate(sourceId:string,captureId:string){
   const key=this.store.captureKey(sourceId,captureId);
   if(key)return this.store.get<Screenshot>('screenshot',key);
@@ -102,7 +102,7 @@ export class Images {
    // Unknown targets remain in an Unassigned Inbox. No case/QA verdict is inferred.
    const shot:Screenshot={id,projectId,source:input.source,mime:MIME[info.format!]!,bytes:input.data.byteLength,
     sha256,originalPath,thumbnailPath,sourceId:input.sourceId,captureId:input.captureId,
-    status:'active',createdAt:created};
+    status:'active',createdAt:created,intake:{requestedTaskId:input.taskId,requestedScreenId:input.screenId,requestedStateId:input.stateId,requestedCaseId:input.caseId,reason:input.source==='external'&&(!input.taskId||!input.screenId)?'TARGET_IDS_MISSING':undefined}};
    let duplicateId:string|undefined;
    this.store.transaction(()=>{
     if(input.source==='external'&&input.sourceId&&input.captureId){
@@ -126,10 +126,15 @@ export class Images {
      if(error instanceof DomainError){
       this.store.audit({projectId,action:'screenshot.inbox',actor:actor.actor,channel:actor.channel,
        evidence:{screenshotId:id,reason:error.code}});
+      const pending=this.screenshot(id);this.store.put('screenshot',{...pending,intake:{...pending.intake,reason:error.code}});
      }else throw error;
     }
    }
-   return {screenshot:shot,duplicate:false};
+   if(input.source==='external'&&input.taskId&&input.screenId&&input.projectId&&
+    input.projectId!==this.store.get<TaskRecord>('task',input.taskId)?.projectId){
+    const pending=this.screenshot(id);this.store.put('screenshot',{...pending,intake:{...pending.intake,reason:'PROJECT_MISMATCH'}});
+   }
+   return {screenshot:this.screenshot(id),duplicate:false};
   }catch(error){
    // Only roll back files for ingest/storage failure before a persisted receipt exists.
    if(!this.store.get<Screenshot>('screenshot',id)){
@@ -150,16 +155,24 @@ export class Images {
    candidateCases.length?'Select a specific QA Case for this screen':'No Approved Preview QA Case matches Task and Screen',409,
    {matches:candidateCases.map(c=>c.id)});
   const c=candidateCases[0]!,existing=this.store.get<Comparison>('comparison',c.comparisonId||'');
+  if(c.evidenceId===id&&existing?.screenshotId===id)
+   return {screenshot:shot,comparison:existing,case:c,duplicate:true};
   const t=now();
   const linked:Screenshot={...shot,projectId:task.projectId,taskId:task.id,screenId:c.screenId,caseId:c.id};
   const cmp:Comparison={id:'cmp_'+randomUUID(),projectId:task.projectId,taskId:task.id,screenshotId:id,
    qaCaseId:c.id,revisionId:c.revisionId,status:'awaiting-verdict',createdAt:t};
-  const newCase:QaCase={...c,evidenceId:id,comparisonId:cmp.id,verdict:undefined,verdictReason:undefined,
-   verdictAt:undefined,verdictBy:undefined,updatedAt:t};
+  const preserveWaiver=c.verdict==='WAIVED';
+  const newCase:QaCase={...c,evidenceId:id,comparisonId:cmp.id,
+   verdict:preserveWaiver?'WAIVED':undefined,
+   verdictReason:preserveWaiver?c.verdictReason:undefined,
+   verdictAt:preserveWaiver?c.verdictAt:undefined,
+   verdictBy:preserveWaiver?c.verdictBy:undefined,
+   history:c.evidenceId||c.verdict?[...(c.history||[]),caseHistory(c,'screenshot-arrived')]:c.history,
+   updatedAt:t};
   this.store.transaction(()=>{
    this.store.put('screenshot',linked);this.store.put('comparison',cmp);this.store.put('qa',newCase);
    this.store.audit({projectId:task.projectId,taskId:task.id,action:'screenshot.assign',actor:actor.actor,channel:actor.channel,
-    evidence:{screenshotId:id,comparisonId:cmp.id,caseId:c.id,previousVerdict:c.verdict,previousComparisonId:existing?.id}});
+    evidence:{screenshotId:id,comparisonId:cmp.id,caseId:c.id,previousVerdict:c.verdict||'PENDING',effectiveVerdict:newCase.verdict||'PENDING',comparisonState:'awaiting-verdict',previousComparisonId:existing?.id}});
   });
   return {screenshot:linked,comparison:cmp,case:newCase};
  }

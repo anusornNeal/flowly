@@ -25,17 +25,14 @@ export class FlowlyApp {
  async compare(screenshotId:string,withDiff=false){
   const s=this.images.screenshot(screenshotId);
   if(!s.caseId||!s.taskId)throw new DomainError('UNASSIGNED_SCREENSHOT','Assign screenshot to a current QA Case before comparison');
-  const c=this.previews.case(s.caseId),rev=this.previews.getRevision(c.revisionId);
-  if(this.previews.get(c.previewId).approvedRevisionId!==c.revisionId)
-   throw new DomainError('STALE_QA_CASE','QA Case does not reference current Approved revision');
+  const c=this.previews.case(s.caseId);
+  const comparison=this.store.list<Comparison>('comparison',{taskId:s.taskId})
+   .find(x=>x.screenshotId===s.id&&x.qaCaseId===c.id);
+  if(!comparison)throw new DomainError('COMPARISON_NOT_FOUND','Screenshot lacks matched approved Preview comparison',409);
+  const rev=this.previews.getRevision(comparison.revisionId);
   const original=this.images.original(s.id);
-  const result=await compareImage(rev,c,original.bytes,withDiff?'diff':'stats');
-  if(c.comparisonId){
-   const prev=this.store.get<Comparison>('comparison',c.comparisonId);
-   if(prev){
-    this.store.put('comparison',{...prev,differencePercent:result.differencePercent,comparedAt:new Date().toISOString()});
-   }
-  }
+  const result=await compareImage(rev,{...c,revisionId:comparison.revisionId},original.bytes,withDiff?'diff':'stats');
+  this.store.put('comparison',{...comparison,differencePercent:result.differencePercent,comparedAt:new Date().toISOString()});
   return result;
  }
  async baseline(caseId:string){
@@ -60,7 +57,7 @@ const OPERATIONS=[
  'task.history','task.blockers',
  'preview.list','preview.create','preview.get','preview.draft','preview.context','preview.context.refresh',
  'preview.revision.save','preview.revision.get','preview.approve','preview.quality',
- 'qa.list','qa.get','qa.required','qa.verdict',
+ 'qa.list','qa.get','qa.required','qa.verdict','qa.waiver.cancel',
  'screenshot.list','screenshot.inbox','screenshot.get','screenshot.assign','screenshot.compare',
  'screenshot.cleanup','screenshot.storage','screenshot.ingest-file',
  'recorder.start','recorder.stop','recorder.steps','recorder.steps.save','recorder.replay','recorder.capture','recorder.session.reset',
@@ -119,6 +116,7 @@ export async function execute(app:FlowlyApp,op:string,data:Record<string,any>,ac
   case 'qa.get':return p.case(String(data.id));
   case 'qa.required':return p.setRequired(String(data.id),Boolean(data.required),actor);
   case 'qa.verdict':return p.verdict(String(data.id),data.verdict,data.reason,actor);
+  case 'qa.waiver.cancel':return p.cancelWaiver(String(data.id),actor,data.reason);
   case 'screenshot.list':return i.list(data.projectId,Boolean(data.includeDeleted));
   case 'screenshot.inbox':return i.inbox(data.projectId);
   case 'screenshot.get':return i.screenshot(String(data.id));

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 import { FlowlyApp } from '../packages/core/src/app.js';
-import { DomainError } from '../packages/core/src/models.js';
+import { DomainError, type Comparison } from '../packages/core/src/models.js';
 import { assessRisk } from '../packages/core/src/workflow.js';
 
 const cli={actor:'test-agent',channel:'cli' as const},user={actor:'test-user',channel:'web' as const};
@@ -75,7 +75,7 @@ test('risk review, embedded Bug deduplication and reject -> fix -> re-review',as
  });
 });
 
-test('Preview Approved revision, case waiver, upload invalidates waiver, screenshot cleanup tombstone',async()=>{
+test('Preview Approved revision, case waiver, upload retains waiver, screenshot cleanup tombstone',async()=>{
  await fixture(async app=>{
   const project=app.tasks.createProject({name:'UI'},user);
   const task=app.tasks.createTask({projectId:project.id,title:'Screen',risk:lowRisk},cli);
@@ -94,8 +94,9 @@ test('Preview Approved revision, case waiver, upload invalidates waiver, screens
   const first=await app.images.ingest({source:'external',sourceId:'phone',captureId:'retry-100',
    projectId:project.id,taskId:task.id,screenId:'login',caseId:qa.id,data:img},cli);
   assert.equal(first.duplicate,false);assert.ok(first.comparison);
-  assert.equal(app.previews.case(qa.id).verdict,undefined);
-  assert.equal(app.tasks.blockers(task.id).includes('REQUIRED_QA_INCOMPLETE'),true);
+  assert.equal(app.previews.case(qa.id).verdict,'WAIVED');
+  assert.equal(app.tasks.blockers(task.id).includes('REQUIRED_QA_INCOMPLETE'),false);
+  assert.equal(app.store.get<Comparison>('comparison',first.comparison!.id)?.status,'awaiting-verdict');
   const duplicate=await app.images.ingest({source:'external',sourceId:'phone',captureId:'retry-100',
    data:img},cli);
   assert.equal(duplicate.screenshot.id,first.screenshot.id);

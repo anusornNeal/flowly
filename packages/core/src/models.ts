@@ -42,9 +42,16 @@ export type PreviewRevision = {
  contextSnapshot: Record<string,unknown>; createdAt: string; approvedAt?: string; approvedBy?: string;
  approvedQuality?: {checkedAt:string;warnings:string[];acceptanceReason?:string;checkedScreenCount:number};
 };
+export type QaCaseHistory = {
+ event: 'revision-superseded' | 'revision-archived' | 'screenshot-arrived' | 'verdict-changed' | 'waiver-cancelled';
+ savedAt: string; revisionId: string; required: boolean; archived?: boolean;
+ verdict?: QaVerdict; verdictReason?: string; verdictBy?: string; verdictAt?: string;
+ evidenceId?: string; comparisonId?: string;
+};
 export type QaCase = {
  id: string; projectId: string; taskId: string; previewId: string; revisionId: string;
  screenId: string; stateId: string; viewport: Viewport; required: boolean;
+ archived?: boolean; history?: QaCaseHistory[];
  verdict?: QaVerdict; verdictReason?: string; verdictBy?: string; verdictAt?: string;
  evidenceId?: string; comparisonId?: string; updatedAt: string;
 };
@@ -52,7 +59,8 @@ export type Screenshot = {
  id: string; projectId: string; source: 'manual' | 'browser' | 'external'; mime: string;
  bytes: number; sha256: string; originalPath?: string; thumbnailPath?: string;
  sourceId?: string; captureId?: string; taskId?: string; screenId?: string;
- caseId?: string; status: 'active' | 'deleted'; createdAt: string; deletedAt?: string;
+ caseId?: string; intake?: {requestedTaskId?:string;requestedScreenId?:string;requestedStateId?:string;requestedCaseId?:string;reason?:string};
+ status: 'active' | 'deleted'; createdAt: string; deletedAt?: string;
 };
 export type Comparison = {
  id: string; projectId: string; taskId: string; screenshotId: string; qaCaseId: string;
