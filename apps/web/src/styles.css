@@ -99,6 +99,7 @@ small{font-size:11px}
 .attention-row strong,.attention-row small{display:block}.attention-row strong{color:#29354b;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .attention-row small{color:#98a4b5;margin-top:3px}.attention-row>svg:last-child{color:#acb6c7}
 .attention-row:hover{background:#fafbff}
+.job-line{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #eef1f5;font-size:11px;color:#64748a}.job-line>div{min-width:0;flex:1}.job-line>div strong,.job-line>div small{display:block}.job-line>div strong{color:#25364e}.job-line>div small{color:#98a5b9;overflow-wrap:anywhere}.job-line>span:last-child{min-width:36px;text-align:right;font-variant-numeric:tabular-nums}
 .activity-list{padding:5px 22px 16px;max-height:510px;overflow:auto}
 .activity-row{display:flex;gap:12px;align-items:center;padding:12px 2px;border-bottom:1px solid #f1f3f7}
 .activity-icon{height:32px;width:32px;border-radius:8px;background:#eef5ff;color:#5679db;display:grid;place-items:center;flex-shrink:0}

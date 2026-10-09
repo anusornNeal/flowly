@@ -6,10 +6,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { records, settings, auditLog } from './schema.js';
-import type { Activity, BugThread, Comparison, Preview, PreviewRevision, Project, QaCase, Screenshot, TaskRecord } from '../../core/src/models.js';
+import type { Activity, BugThread, Comparison, Preview, PreviewRevision, Project, QaCase, Screenshot, TaskRecord, JobRecord } from '../../core/src/models.js';
 
-export type Kind = 'project' | 'task' | 'bug' | 'preview' | 'revision' | 'qa' | 'screenshot' | 'comparison' | 'recipe';
-export type Entity = Project | TaskRecord | BugThread | Preview | PreviewRevision | QaCase | Screenshot | Comparison | { id: string; projectId: string; screenId: string; steps: unknown[] };
+export type Kind = 'project' | 'task' | 'bug' | 'preview' | 'revision' | 'qa' | 'screenshot' | 'comparison' | 'recipe' | 'job';
+export type Entity = Project | TaskRecord | BugThread | Preview | PreviewRevision | QaCase | Screenshot | Comparison | JobRecord | { id: string; projectId: string; screenId: string; steps: unknown[] };
 type DataRecord = Entity & { id: string; projectId?: string; taskId?: string; status?: string; updatedAt?: string };
 export class LocalStore {
  readonly root: string;
@@ -38,6 +38,16 @@ export class LocalStore {
  }
  close() { this.raw.close(); }
  transaction<T>(fn: () => T): T { return this.raw.transaction(fn)(); }
+ // Uses the exact domain mutation and SQLite SAVEPOINTs but always rolls back all
+ // records, audit and idempotency entries. Only call for DB-only commands.
+ dryRun<T>(fn:()=>T):T {
+  class Rollback extends Error { constructor(public readonly result:T){super('dry-run rollback');} }
+  try{this.raw.transaction(()=>{throw new Rollback(fn());})();}catch(error){
+   if(error instanceof Rollback)return error.result;
+   throw error;
+  }
+  throw Error('Dry-run transaction did not roll back');
+ }
  get<T extends Entity>(kind: Kind, id: string): T | undefined {
   const [found] = this.orm.select().from(records).where(and(eq(records.kind,kind), eq(records.id,id))).limit(1).all();
   return found ? JSON.parse(found.body) as T : undefined;

@@ -3,6 +3,7 @@ import multipart from '@fastify/multipart';
 import fs from 'node:fs';
 import path from 'node:path';
 import { FlowlyApp, execute, capabilities } from '../../../packages/core/src/app.js';
+import { JobManager } from '../../../packages/core/src/jobs.js';
 import { DomainError } from '../../../packages/core/src/models.js';
 import type { Actor, Screenshot } from '../../../packages/core/src/models.js';
 
@@ -40,6 +41,7 @@ async function imageForm(request:FastifyRequest,limit:number) {
 }
 export async function createServer(options:{root?:string}={}){
  const domain=new FlowlyApp(options.root);
+ const jobs=new JobManager(domain);
  const server=fastify({logger:false,bodyLimit:1024*1024});
  await server.register(multipart,{limits:{fileSize:MAX_MANUAL_FILE,files:1,fields:24}});
  server.addHook('onRequest',async(request)=>{
@@ -71,6 +73,13 @@ export async function createServer(options:{root?:string}={}){
  });
  server.get('/api/health',async()=>({ok:true,name:'flowly',mode:'localhost',version:1}));
  server.get('/api/capabilities',async()=>({ok:true,result:capabilities()}));
+ server.get('/api/jobs/:id',async(request)=>({ok:true,result:jobs.get(params<{id:string}>(request).id)}));
+ server.get('/api/jobs',async(request)=>{const q=request.query as {projectId:string;offset?:string;limit?:string};
+  return {ok:true,result:jobs.list(q.projectId,Number(q.offset||0),Number(q.limit||30))};});
+ server.post('/api/jobs',async(request)=>{const body=request.body as {projectId:string;operation:string;input:Record<string,unknown>;idempotencyKey?:string};
+  return {ok:true,result:jobs.start(body,actor(request))};});
+ server.post('/api/jobs/:id/retry',async(request)=>({ok:true,result:jobs.retry(params<{id:string}>(request).id,actor(request))}));
+ server.post('/api/jobs/:id/cancel',async(request)=>({ok:true,result:jobs.cancel(params<{id:string}>(request).id,actor(request))}));
  server.get('/api/projects',async()=>({ok:true,result:domain.tasks.listProjects()}));
  server.get('/api/snapshot/:projectId',async(request)=>({ok:true,result:domain.snapshot(params<{projectId:string}>(request).projectId)}));
  server.get('/api/tasks',async(request)=>{
@@ -94,6 +103,17 @@ export async function createServer(options:{root?:string}={}){
  server.post('/api/operations/:name',async(request,reply)=>{
   const op=params<{name:string}>(request).name;
   if(op==='settings.token.reveal')reply.header('Cache-Control','no-store');
+  if(op.startsWith('job.')){
+   const body=(request.body||{}) as Record<string,any>;
+   const caller=actor(request);
+   if(op==='job.start')return {ok:true,result:jobs.start({projectId:String(body.projectId),
+    operation:String(body.operation),input:body.input||body.payload,idempotencyKey:body.idempotencyKey},caller)};
+   if(op==='job.status')return {ok:true,result:jobs.get(String(body.id))};
+   if(op==='job.list')return {ok:true,result:jobs.list(String(body.projectId),Number(body.offset||0),Number(body.limit||30))};
+   if(op==='job.retry')return {ok:true,result:jobs.retry(String(body.id),caller)};
+   if(op==='job.cancel')return {ok:true,result:jobs.cancel(String(body.id),caller)};
+   throw new DomainError('UNKNOWN_OPERATION','Unknown job operation',404);
+  }
   const body=request.body;
   if(body!==null&&(typeof body!=='object'||Array.isArray(body)))
    throw new DomainError('INVALID_PAYLOAD','JSON object body required');
@@ -131,6 +151,6 @@ export async function createServer(options:{root?:string}={}){
    return reply.type(mime[ext]||'application/octet-stream').send(fs.createReadStream(file));
   });
  }
- server.addHook('onClose',async()=>{await domain.close();});
+ server.addHook('onClose',async()=>{await jobs.close();await domain.close();});
  return server;
 }

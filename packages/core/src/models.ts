@@ -73,6 +73,14 @@ export type Activity = {
 };
 export type ReviewerDecision = { verdict: 'approve' | 'reject'; reason?: string; fingerprint?: string; evidenceId?: string };
 export type StorageTotals = { originals: number; thumbnails: number; bytes: number };
+export type JobRecord = {
+ id:string;projectId:string;operation:string;input:Record<string,unknown>;
+ requestHash:string;idempotencyKey?:string;actor:Actor;
+ status:'queued'|'running'|'succeeded'|'failed'|'interrupted'|'cancelled';
+ progress:number;attempts:number;result?:unknown;
+ error?:{code:string;message:string};createdAt:string;updatedAt:string;
+ startedAt?:string;finishedAt?:string;
+};
 export type Snapshot = {
  project: Project; tasks: TaskRecord[]; previews: Preview[]; cases: QaCase[];
  bugs: BugThread[]; activity: Activity[]; screenshots: Screenshot[];

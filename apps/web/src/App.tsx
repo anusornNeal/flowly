@@ -188,6 +188,7 @@ export default function App(){
  useEffect(()=>{if(page==='settings')void loadStorage();},[page,snapshot?.screenshots.length]);
 
  const recent=snapshot?.activity||[];
+ const jobs=snapshot?.jobs||[];
  const attention=tasks.filter(t=>t.status==='ready-for-review'||t.status==='in-progress'&&
   cases.some(c=>c.taskId===t.id&&c.required&&!['PASS','WAIVED'].includes(c.verdict||''))).slice(0,6);
  const screens=draft?.screens||[];
@@ -251,7 +252,17 @@ export default function App(){
        <div className="qa-overview">{(['PASS','FAIL','WAIVED','PENDING'] as const).map(status=><button key={status} onClick={()=>setPage('preview')}>
         <span className={'qa-dot q-'+status.toLowerCase()}/><span>{status==='PENDING'?'Awaiting verdict':status}</span>
         <strong>{cases.filter(c=>status==='PENDING'?!c.verdict:c.verdict===status).length}</strong></button>)}</div></section>
-     </div></>:<Empty title="No project selected" body="Create a local workspace to start tracking tasks."/>}
+     </div>
+     <section className="panel padded"><div className="section-row"><div><div className="mini-eyebrow">AGENT EXECUTION</div><h2>CLI and Browser Jobs</h2>
+      <p className="muted">Persistent job IDs, actual actor/channel, progress and recorded outcomes</p></div>
+      <Pill tone="blue">{jobs.filter(j=>j.status==='queued'||j.status==='running').length} active</Pill></div>
+      {jobs.slice(0,12).map(job=><div className="job-line" key={job.id}><span className={'qa-dot q-'+(job.status==='succeeded'?'pass':job.status==='failed'?'fail':'pending')}/>
+       <div><strong>{job.operation}</strong><small>{job.id} · {job.actor.actor} via {job.actor.channel} · {dateTime(job.updatedAt)}</small></div>
+       <Pill tone={job.status==='succeeded'?'green':job.status==='failed'?'red':job.status==='interrupted'?'amber':'blue'}>{job.status}</Pill>
+       <span>{job.progress}%</span></div>)}
+      {!jobs.length&&<Empty title="No CLI jobs yet" body="Long captures, replays and comparisons will appear here when started."/>}
+     </section>
+     </>:<Empty title="No project selected" body="Create a local workspace to start tracking tasks."/>}
     </>}
     {page==='board'&&<>
      <header className="page-heading"><div><div className="eyebrow">DELIVERY WORKFLOW</div><h1>Task Board<span className="dot">.</span></h1><p>Five lanes with audit-backed transitions and explicit Done gates.</p></div>

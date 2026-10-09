@@ -24,6 +24,7 @@ Authoritative requirements: docs/devflow-v1-spec.json (Devflow FWL-0001–FWL-00
 - FWL-0019 Visual QA FAIL -> Bug: confirmed explicit FAIL records evidence-linked dedup Bug; no passive decisions.
 - FWL-0020 QA case gates: required/optional current revision case tuples, PASS/FAIL/WAIVED, blocker calculation and no unjustified Done.
 - FWL-0021 shared agent-first architecture: packages/core/src/app.ts execute facade, shared SQLite service to Web API and CLI.
+- FWL-0021 (extension) structured CLI contract: packages/core/src/contracts.ts (versioned discovery), packages/core/src/dryRun.ts (rollback-only validations), packages/core/src/jobs.ts (persistent asynchronous jobs with explicit retry), packages/cli/src/index.ts (JSON stdin/file, pagination, stable error codes), apps/api/src/server.ts (job operations), monitoring UI job feed.
 - FWL-0022 Task/Review/Bug CLI: packages/cli/src/index.ts, task.context one-shot operation, task.batch atomic idempotent mutation.
 - FWL-0023 Preview/Capture/QA CLI: all Preview and screenshot/Recorder/QA operations exposed by same execution surface.
 - FWL-0024 monitoring Web UI: Overview/Board/Task/Preview/Settings real API, activity audit with actor/channel, 6-second refresh and optional human intervention.

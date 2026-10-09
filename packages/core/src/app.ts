@@ -1,4 +1,4 @@
-import type { Actor, BrowserStep, PreviewRevision, QaCase, ScreenSpec, Screenshot, Comparison } from './models.js';
+import type { Actor, BrowserStep, PreviewRevision, QaCase, ScreenSpec, Screenshot, Comparison, JobRecord } from './models.js';
 import { DomainError } from './models.js';
 import { LocalStore } from '../../db/src/store.js';
 import { Tasks } from './tasks.js';
@@ -20,7 +20,7 @@ export class FlowlyApp {
  snapshot(projectId:string){
   return {project:this.tasks.project(projectId),tasks:this.tasks.listTasks(projectId),previews:this.previews.list(projectId),
    cases:this.previews.cases({projectId}),screenshots:this.images.list().filter(s=>s.projectId===projectId||s.projectId==='unassigned'),bugs:this.store.list('bug',{projectId}),
-   activity:this.tasks.activity(projectId)};
+   activity:this.tasks.activity(projectId),jobs:this.store.list<JobRecord>('job',{projectId})};
  }
  async compare(screenshotId:string,withDiff=false){
   const s=this.images.screenshot(screenshotId);
@@ -61,7 +61,7 @@ const OPERATIONS=[
  'screenshot.list','screenshot.inbox','screenshot.get','screenshot.assign','screenshot.compare',
  'screenshot.cleanup','screenshot.storage','screenshot.ingest-file',
  'recorder.start','recorder.stop','recorder.steps','recorder.steps.save','recorder.replay','recorder.capture','recorder.session.reset',
- 'settings.token.reveal','settings.token.regenerate','activity','snapshot'
+ 'settings.token.reveal','settings.token.regenerate','job.start','job.status','job.list','job.retry','job.cancel','activity','snapshot'
 ] as const;
 export function capabilities(){
  return {name:'flowly',version:1,localFirst:true,agentFirst:true,webRequiresAgent:false,

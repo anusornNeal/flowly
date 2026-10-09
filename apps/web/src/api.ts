@@ -1,8 +1,8 @@
-import type { Activity, BugThread, Preview, Project, QaCase, Screenshot, TaskRecord } from '../../../packages/core/src/models.js';
+import type { Activity, BugThread, Preview, Project, QaCase, Screenshot, TaskRecord, JobRecord } from '../../../packages/core/src/models.js';
 
 export type Snapshot={
  project:Project;tasks:TaskRecord[];previews:Preview[];cases:QaCase[];
- screenshots:Screenshot[];bugs:BugThread[];activity:Activity[];
+ screenshots:Screenshot[];bugs:BugThread[];activity:Activity[];jobs:JobRecord[];
 };
 export type Detail={task:TaskRecord;children:TaskRecord[];bugs:BugThread[];cases:QaCase[];
  linked:TaskRecord[];blockers:string[];risk:string;history:Activity[]};

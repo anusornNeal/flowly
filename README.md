@@ -41,6 +41,14 @@ The sourceId+captureId tuple is durable and idempotent, including after restart 
 
 Screenshot originals remain unchanged, with separate thumbnails; Visual Diff is created only on demand. No automatic deletion. User-selected cleanup deletes only evidence never referenced by any historical QA PASS/FAIL or Bug, skipping protected entries; Deleted History retains non-restorable receipt metadata.
 
+## Resumable CLI Jobs and command contracts
+
+The CLI exposes machine-readable operation contracts with `node bin/flowly.cjs describe task.transition` or `node bin/flowly.cjs capabilities`. `--input=-` or `--stdin` reads JSON from standard input; `--input=@file.json` accepts structured input from a file. `--limit=N --offset=N` pages list output with `items`, `total`, `hasMore`, and `schemaVersion:1`. A named validation or workflow failure emits stable `code` and exits non-zero.
+
+For DB-only commands, `--dry-run` executes the SAME domain validators inside a rollback-only SQLite transaction, returning `simulation:true` and `committed:false` without persisting records or audit. File/Browser/network/token operations reject dry-run.
+
+Long-running approved operations `recorder.replay`, `recorder.capture`, `preview.quality`, and `screenshot.compare` support `--async --projectId=... --jobKey=unique-key`. This submits a persistent local Job, returning a stable Job ID without requiring a Web UI session. Query with `flowly job.status --id=job_xxx`, retry explicitly with `flowly job.retry --id=job_xxx`. Jobs are serialized per project; job ID, actor, state, attempts, progress, errors, and result persist in SQLite and appear in the monitoring UI. A previously in-flight job is marked `interrupted` when the service restarts; it is NOT silently replayed. Explicit retry uses its original ID. Only queued jobs are cancellable. `flowly job.list --projectId=...` returns a paginated Job list.
+
 ## Verification
 
     npm run typecheck
