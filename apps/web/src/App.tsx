@@ -4,6 +4,7 @@ import { Activity, AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell,
  Maximize2, Minimize2, Plus, RefreshCw, Save, Search, Settings, ShieldCheck, Terminal, Trash2, Upload, WandSparkles, X } from 'lucide-react';
 import type { Actor, ChecklistItem, Preview, Project, QaCase, ScreenSpec, Screenshot, TaskRecord } from '../../../packages/core/src/models.js';
 import { type Detail, type Snapshot, get, op, upload, dateLabel, fileUrl, baselineUrl, diffUrl } from './api.js';
+import { previewDocument } from './previewDocument.js';
 
 type Page='overview'|'board'|'task'|'preview'|'settings';
 type Tab='summary'|'checklist'|'subtasks'|'bugs'|'qa'|'history';
@@ -196,6 +197,10 @@ export default function App(){
  const jobs=snapshot?.jobs||[];
  const attention=tasks.filter(t=>t.status==='ready-for-review'||t.status==='in-progress'&&
   cases.some(c=>c.taskId===t.id&&c.required&&!['PASS','WAIVED'].includes(c.verdict||''))).slice(0,6);
+ useEffect(()=>{
+  const target=draft?.screens?.[screenIndex];
+  if(target)previewFrame.current?.contentWindow?.postMessage({type:'flowly-preview-select',screenId:target.id,stateId:target.stateId},'*');
+ },[screenIndex,selectedPreview]);
  const screens=draft?.screens||[];
  const visibleScreenshots=deletedShown?historyImages.filter(s=>s.status==='deleted'):(snapshot?.screenshots||[]);
  const menuName:Record<Page,string>={overview:'Overview',board:'Task Board',task:'Task Detail',preview:'Preview & Visual QA',settings:'Settings'};
@@ -409,7 +414,8 @@ export default function App(){
         <button className="outline-button" title="Reset Preview state" onClick={()=>setPreviewResetKey(value=>value+1)}><RefreshCw size={14}/> Reset</button></div></div>
        <div className="preview-canvas"><iframe ref={previewFrame} key={previewResetKey} title="Sandboxed live interactive preview" sandbox="allow-scripts"
         style={{width:Math.min(screens[screenIndex]?.viewport.width||900,1100),height:Math.min(screens[screenIndex]?.viewport.height||650,700)}}
-        srcDoc={'<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: blob:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; connect-src \'none\'; font-src data:; frame-src \'none\'; form-action \'none\'; base-uri \'none\'"><style>'+draft.css+'</style></head><body>'+draft.html+'<script>window.addEventListener("message",e=>{if(e.data?.type==="flowly-preview-back")history.back()});<\/script><script>'+draft.js+'<\/script></body></html>'}/></div>
+        onLoad={()=>{const target=screens[screenIndex];if(target)previewFrame.current?.contentWindow?.postMessage({type:'flowly-preview-select',screenId:target.id,stateId:target.stateId},'*');}}
+        srcDoc={previewDocument(draft,screens[screenIndex])}/></div>
        <div className="source-foot">No automatic approval. Selected target: {screens[screenIndex]?.viewport.width||'–'} × {screens[screenIndex]?.viewport.height||'–'}</div>
       </section>
      </div>
