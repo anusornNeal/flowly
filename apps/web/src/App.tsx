@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Activity, AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell, Check, CheckCircle2, ChevronDown, CircleDashed,
  Clipboard, Code2, Eye, FileImage, FolderKanban, Grid2X2, History, Image, ListChecks, Monitor, MoreHorizontal,
- Plus, RefreshCw, Save, Search, Settings, ShieldCheck, Terminal, Trash2, Upload, WandSparkles, X } from 'lucide-react';
+ Maximize2, Minimize2, Plus, RefreshCw, Save, Search, Settings, ShieldCheck, Terminal, Trash2, Upload, WandSparkles, X } from 'lucide-react';
 import type { Actor, ChecklistItem, Preview, Project, QaCase, ScreenSpec, Screenshot, TaskRecord } from '../../../packages/core/src/models.js';
 import { type Detail, type Snapshot, get, op, upload, dateLabel, fileUrl, baselineUrl, diffUrl } from './api.js';
 
@@ -44,6 +44,7 @@ export default function App(){
  const [taskEdit,setTaskEdit]=useState<{title:string;description:string;acceptanceCriteria:string;verificationStep:string}>({title:'',description:'',acceptanceCriteria:'',verificationStep:''});
  const [previewName,setPreviewName]=useState('');
  const [previewResetKey,setPreviewResetKey]=useState(0);
+ const [previewExpanded,setPreviewExpanded]=useState(false);
  const previewFrame=useRef<HTMLIFrameElement|null>(null);
  const [previewTaskId,setPreviewTaskId]=useState('');
  const [draft,setDraft]=useState<Preview['draft']|null>(null);
@@ -133,7 +134,7 @@ export default function App(){
   finally{setBusy(false);}
  };
  const chooseTask=(id:string)=>{setSelectedTask(id);setPage('task');setTab('summary');setSelectedBugId('');setBugFilter('open');};
- const choosePreview=(id:string)=>{setSelectedPreview(id);setPage('preview');setSelectedCase('');};
+ const choosePreview=(id:string)=>{setSelectedPreview(id);setPage('preview');setSelectedCase('');setPreviewExpanded(false);};
  const createProject=async(e:FormEvent)=>{
   e.preventDefault();setBusy(true);
   try{
@@ -394,7 +395,7 @@ export default function App(){
       <div className="action-wrap"><button className="outline-button" onClick={()=>void submitPreview()}><Save size={15}/> Save draft</button>
        <button className="primary-button" onClick={()=>void saveRevision()}><Clipboard size={15}/> Freeze revision</button></div>
      </div>
-     <div className="preview-split">
+     <div className={"preview-split"+(previewExpanded?" expanded":"")}>
       <section className="source-panel"><div className="source-toolbar"><strong>Source</strong><div className="source-tabs">
        {(['html','css','js'] as const).map(lang=><button key={lang} className={sourceTab===lang?'active':''} onClick={()=>setSourceTab(lang)}>{lang.toUpperCase()}</button>)}</div></div>
        <textarea spellCheck={false} aria-label={sourceTab.toUpperCase()+' source editor'} value={draft[sourceTab]}
@@ -404,7 +405,7 @@ export default function App(){
       <section className="live-panel"><div className="source-toolbar"><strong><Eye size={15}/> Live Preview</strong>
        <select aria-label="Screen target" value={screenIndex} onChange={e=>setScreenIndex(Number(e.target.value))}>
         {screens.map((s,index)=><option key={index} value={index}>{s.name} · {s.stateId} · {s.viewport.device}</option>)}
-       </select><div className="action-wrap"><button className="outline-button" title="Go back inside Preview" onClick={()=>previewFrame.current?.contentWindow?.postMessage({type:'flowly-preview-back'},'*')}><ArrowLeft size={14}/> Back</button>
+       </select><div className="action-wrap"><button className="outline-button" aria-pressed={previewExpanded} title={previewExpanded?"Restore split editor":"Expand live Preview"} onClick={()=>setPreviewExpanded(expanded=>!expanded)}>{previewExpanded?<Minimize2 size={14}/>:<Maximize2 size={14}/>} {previewExpanded?"Restore":"Expand"}</button><button className="outline-button" title="Go back inside Preview" onClick={()=>previewFrame.current?.contentWindow?.postMessage({type:'flowly-preview-back'},'*')}><ArrowLeft size={14}/> Back</button>
         <button className="outline-button" title="Reset Preview state" onClick={()=>setPreviewResetKey(value=>value+1)}><RefreshCw size={14}/> Reset</button></div></div>
        <div className="preview-canvas"><iframe ref={previewFrame} key={previewResetKey} title="Sandboxed live interactive preview" sandbox="allow-scripts"
         style={{width:Math.min(screens[screenIndex]?.viewport.width||900,1100),height:Math.min(screens[screenIndex]?.viewport.height||650,700)}}
