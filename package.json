@@ -12,7 +12,7 @@
     "start": "tsx apps/api/src/main.ts",
     "cli": "tsx packages/cli/src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
     "build": "npm run typecheck && vite build --config apps/web/vite.config.ts",
     "smoke": "tsx scripts/smoke.ts"
   },
