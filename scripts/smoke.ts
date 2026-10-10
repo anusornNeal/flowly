@@ -20,6 +20,12 @@ try{
  await desktop.getByRole('dialog').getByRole('textbox',{name:'Project name'}).fill('QA Workspace');
  await desktop.getByRole('dialog').getByRole('button',{name:'Create project'}).click();
  await desktop.getByText('Keep every delivery in view').waitFor();
+ const fontAssets=await desktop.evaluate(async()=>{
+  const thai=await document.fonts.load('400 16px "LINE Seed Sans TH"','ภาษาไทย');
+  const latin=await document.fonts.load('600 14px "Inter Variable"','FLY-0001');
+  return {thai:thai.length,latin:latin.length};
+ });
+ if(fontAssets.thai<1||fontAssets.latin<1)throw Error('Self-hosted fonts unavailable '+JSON.stringify(fontAssets));
  await desktop.getByRole('button',{name:/Task Board/}).first().click();
  await desktop.locator('#new-task-title').fill('Capture QA Case');
  await desktop.locator('.quick-create button').click();

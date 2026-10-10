@@ -1,5 +1,9 @@
 @import "tailwindcss";
-:root{font-family:'LINE Seed Sans TH','Noto Sans Thai',Inter,'Segoe UI',system-ui,sans-serif;color:#18243b;background:#f5f7fb;font-synthesis:none}
+@font-face{font-family:'LINE Seed Sans TH';src:url('/fonts/LINESeedSansTH-Regular.ttf') format('truetype');font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:'LINE Seed Sans TH';src:url('/fonts/LINESeedSansTH-Bold.ttf') format('truetype');font-style:normal;font-weight:700;font-display:swap}
+@font-face{font-family:'LINE Seed Sans TH';src:url('/fonts/LINESeedSansTH-ExtraBold.ttf') format('truetype');font-style:normal;font-weight:800 900;font-display:swap}
+:root{--font-primary:'LINE Seed Sans TH','Noto Sans Thai',sans-serif;--font-secondary:'Inter Variable','LINE Seed Sans TH',sans-serif;font-family:var(--font-primary);color:#18243b;background:#f5f7fb;font-synthesis:none}
+:where(.nav-btn,.breadcrumb,.eyebrow,.mini-eyebrow,.nav-eyebrow,.brand-sub,.pill,.stat-card strong,.task-card-overline,.board-lane header,.task-card-footer,.detail-tabs>button){font-family:var(--font-secondary);font-variant-numeric:tabular-nums}
 *{box-sizing:border-box}
 html,body,#root{min-height:100%;margin:0}
 button,input,textarea,select{font:inherit}

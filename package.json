@@ -2,7 +2,9 @@
   "name": "flowly",
   "version": "0.1.0",
   "private": true,
-  "bin": {"flowly": "./bin/flowly.cjs"},
+  "bin": {
+    "flowly": "./bin/flowly.cjs"
+  },
   "type": "module",
   "description": "Local-first agent-operated project board and visual QA workspace",
   "scripts": {
@@ -18,6 +20,7 @@
   },
   "dependencies": {
     "@fastify/multipart": "^9.4.0",
+    "@fontsource-variable/inter": "^5.3.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "better-sqlite3": "^12.10.0",
