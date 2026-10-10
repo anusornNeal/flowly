@@ -44,6 +44,8 @@ try{
  await mobile.getByRole('button',{name:/Task Board/}).first().click();
  await mobile.getByText('Capture QA Case').waitFor();
  const mobileWidth=await mobile.evaluate(()=>({viewport:innerWidth,scroll:document.documentElement.scrollWidth}));
+ const mobileNav=await mobile.locator('nav[aria-label="Main navigation"]').evaluate(el=>({scroll:el.scrollWidth,width:el.clientWidth}));
+ if(mobileNav.scroll>mobileNav.width+1)throw Error('Mobile navigation label clipped '+JSON.stringify(mobileNav));
  await mobile.screenshot({path:path.join(artifactDir,'mobile.png'),fullPage:true});
  const appRoot=await mobile.locator('.flowly-app').count();
  await sharp(path.join(artifactDir,'desktop.png')).resize({width:900}).jpeg({quality:65}).toFile(path.join(artifactDir,'desktop-preview.jpg'));
