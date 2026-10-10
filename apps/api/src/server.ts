@@ -1,4 +1,5 @@
 import fastify, { type FastifyRequest } from 'fastify';
+import { createRuntimeAttestation } from './runtimeAttestation.js';
 import multipart from '@fastify/multipart';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -42,6 +43,7 @@ async function imageForm(request:FastifyRequest,limit:number) {
 export async function createServer(options:{root?:string}={}){
  const domain=new FlowlyApp(options.root);
  const jobs=new JobManager(domain);
+ const runtimeAttestation=createRuntimeAttestation();
  const server=fastify({logger:false,bodyLimit:1024*1024});
  await server.register(multipart,{limits:{fileSize:MAX_MANUAL_FILE,files:1,fields:24}});
  server.addHook('onRequest',async(request)=>{
@@ -72,7 +74,7 @@ export async function createServer(options:{root?:string}={}){
    message:status===500?'Flowly could not process the request':err.message.slice(0,180)});
  });
  server.get('/api/health',async()=>({ok:true,name:'flowly',mode:'localhost',version:1}));
- server.get('/api/capabilities',async()=>({ok:true,result:capabilities()}));
+ server.get('/api/capabilities',async()=>({...runtimeAttestation(),ok:true,result:capabilities()}));
  server.get('/api/jobs/:id',async(request)=>({ok:true,result:jobs.get(params<{id:string}>(request).id)}));
  server.get('/api/jobs',async(request)=>{const q=request.query as {projectId:string;offset?:string;limit?:string};
   return {ok:true,result:jobs.list(q.projectId,Number(q.offset||0),Number(q.limit||30))};});
