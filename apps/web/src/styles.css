@@ -268,3 +268,21 @@ small{font-size:11px}
  .topbar-tools .pill{display:none}
 }
 @media(prefers-reduced-motion:reduce){button{transition:none!important}}
+
+/* Engineering reports and dependency-aware parallel execution */
+.engineering-panel{max-width:100%;overflow:hidden}
+.engineering-form{display:grid;gap:14px;margin-top:16px}
+.engineering-form>label,.engineering-decision-box>label{display:grid;gap:6px;font-size:13px;font-weight:550}
+.engineering-form input,.engineering-form select,.engineering-form textarea,
+.engineering-decision-box input,.engineering-decision-box select{width:100%;max-width:100%;min-width:0;border:1px solid var(--border,#d9dfeb);border-radius:9px;padding:10px 12px;background:var(--surface,#fff);font:inherit;color:inherit}
+.engineering-form textarea{resize:vertical;line-height:1.5}
+.engineering-form .field-row{padding:10px 0;border-bottom:1px solid var(--border,#e7eaf0)}
+.engineering-decision-box{display:grid;gap:12px;border:1px solid var(--border,#e4e7ed);border-radius:12px;padding:16px}
+.engineering-decision-box h3{margin:0;font-size:16px}
+.engineering-stream{display:flex;flex-wrap:wrap;align-items:center;gap:9px;border:1px solid var(--border,#e7eaf0);border-radius:10px;padding:12px}
+.engineering-stream strong{flex:1 1 50%;font-size:14px}
+.engineering-stream span{font-size:12px}
+.engineering-stream small{flex:1 1 100%;opacity:.72}
+.engineering-stream .action-wrap{flex:1 1 100%}
+.detail-tabs{overflow-x:auto;flex-wrap:nowrap}
+.detail-tabs button{white-space:nowrap}

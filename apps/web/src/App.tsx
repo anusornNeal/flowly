@@ -5,9 +5,10 @@ import { Activity, AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell,
 import type { Actor, ChecklistItem, Preview, Project, QaCase, ScreenSpec, Screenshot, TaskRecord } from '../../../packages/core/src/models.js';
 import { type Detail, type Snapshot, get, op, upload, dateLabel, fileUrl, baselineUrl, diffUrl } from './api.js';
 import { previewDocument } from './previewDocument.js';
+import EngineeringPanel from './EngineeringPanel.js';
 
 type Page='overview'|'board'|'task'|'preview'|'settings';
-type Tab='summary'|'checklist'|'subtasks'|'bugs'|'qa'|'history';
+type Tab='summary'|'decision'|'implementation'|'parallel'|'checklist'|'subtasks'|'bugs'|'qa'|'history';
 const lanes=['backlog','todo','in-progress','ready-for-review','done'] as const;
 const laneNames:Record<string,string>={'backlog':'Backlog','todo':'To-do','in-progress':'In progress','ready-for-review':'Ready for review','done':'Done'};
 const humanStatus=(v:string)=>laneNames[v]||v.replaceAll('-',' ');
@@ -299,7 +300,7 @@ export default function App(){
       <div className="action-cluster"><Pill tone={activeTask.status==='done'?'green':'blue'}>{humanStatus(activeTask.status)}</Pill>
        {activeTask.status!=='done'&&<select aria-label="Change lane" value={activeTask.status} onChange={e=>statusSelect(activeTask.id,e.target.value)}>
         {lanes.map(l=><option value={l} key={l}>{humanStatus(l)}</option>)}</select>}</div></header>
-     <div className="detail-tabs">{(['summary','checklist','subtasks','bugs','qa','history'] as Tab[]).map(t=><button key={t} className={t===tab?'active':''} onClick={()=>setTab(t)}>{humanStatus(t)}
+     <div className="detail-tabs">{(['summary','decision','parallel','implementation','checklist','subtasks','bugs','qa','history'] as Tab[]).map(t=><button key={t} className={t===tab?'active':''} onClick={()=>setTab(t)}>{humanStatus(t)}
      {t==='bugs'&&!!detail?.bugs.length&&<span>{detail.bugs.length}</span>}</button>)}</div>
      {tab==='summary'&&<div className="detail-grid"><section className="panel padded"><div className="mini-eyebrow">TASK INFORMATION</div><h2>Scope and acceptance</h2>
       <label>Title<input value={taskEdit.title} disabled={activeTask.status==='done'} onChange={e=>setTaskEdit({...taskEdit,title:e.target.value})}/></label>
@@ -329,6 +330,7 @@ export default function App(){
         {!previews.some(p=>p.taskId===activeTask.id)&&<p className="muted">No preview linked yet.</p>}
        </div>
       </section></div>}
+     {(['decision','implementation','parallel'] as const).includes(tab as 'decision'|'implementation'|'parallel')&&<EngineeringPanel key={activeTask.id+'-'+tab} task={activeTask} mode={tab as 'decision'|'implementation'|'parallel'} onAction={(name,body)=>doAction(name,body)} busy={busy}/>}
      {tab==='checklist'&&<section className="panel padded"><div className="section-row"><div><div className="mini-eyebrow">LIGHTWEIGHT STEPS</div><h2>Checklist</h2></div>
       <Pill tone="blue">{activeTask.checklist.filter(c=>c.done).length} / {activeTask.checklist.length}</Pill></div>
       {activeTask.checklist.map((item,index)=><div className="checklist-row" key={item.id}><input aria-label={'Complete '+item.text} type="checkbox" checked={item.done} disabled={activeTask.status==='done'}
