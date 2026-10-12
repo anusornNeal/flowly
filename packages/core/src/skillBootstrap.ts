@@ -77,7 +77,7 @@ export function getAgentBootstrap(app: FlowlyApp, input: BootstrapRequest = {}):
     readOnly: true as const,
     authority: 'advisory' as const,
     cli: {
-      discovery: ['capabilities', 'project.list', 'task.context'],
+      discovery: ['bootstrap', 'next', 'guide', 'capabilities', 'project.list', 'task.context'],
       operations: [...info.operations],
       approvalAuthority: [...info.approvalAuthority],
     },

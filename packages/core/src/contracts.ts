@@ -7,6 +7,16 @@ export type OperationContract={operation:string;parameters:Record<string,Param>;
 const param=(type:Param['type']='string'):Param=>({type});
 const id=param(),projectId=param(),taskId=param(),previewId=param();
 const FIELDS:Record<string,Record<string,Param>>={
+ 'project.list':{},
+ 'bootstrap':{projectId,sessionId:param()},
+ 'next':{projectId,taskId,sessionId:param()},
+ 'guide':{intent:param(),projectId,taskId,maxChars:param('number'),allowProjectGuidance:param('boolean'),reference:param()},
+ 'skills.list':{projectId,includeDisabled:param('boolean')},
+ 'skills.get':{id,projectId,version:param()},
+ 'skills.route':{intent:param(),projectId,taskId,allowProjectGuidance:param('boolean')},
+ 'skills.reference':{id,projectId,version:param(),reference:param()},
+ 'skills.import':{projectId,content:param(),version:param(),triggers:param('array')},
+ 'skills.enable':{id,projectId,version:param(),enabled:param('boolean')},
  'project.create':{name:param(),platform:{type:'string',enum:['web','desktop','mobile']},baseUrl:param(),sourcePath:param(),uiContext:param('object')},
  'project.update':{id, name:param(),platform:param(),baseUrl:param(),sourcePath:param(),uiContext:param('object')},
  'project.get':{id},
@@ -53,6 +63,7 @@ const FIELDS:Record<string,Record<string,Param>>={
  'job.start':{projectId,operation:param(),idempotencyKey:param(),input:param('object'),payload:param('object')},'job.status':{id},'job.list':{projectId,offset:param('number'),limit:param('number')},'job.retry':{id},'job.cancel':{id}
 };
 const REQUIRED:Record<string,string[]>={
+ 'skills.get':['id'],'skills.reference':['id','reference'],'skills.import':['projectId','content'],'skills.enable':['id','enabled'],
  'project.create':['name'],'project.update':['id'],'project.get':['id'],
  'task.list':['projectId'],'task.create':['projectId','title'],'task.subtask':['projectId','parentId','title'],
  'task.get':['id'],'task.detail':['id'],'task.context':['id'],'task.update':['id'],'task.transition':['id','to'],
@@ -75,7 +86,7 @@ const REQUIRED:Record<string,string[]>={
  'recorder.session.reset':['projectId','confirm'],'settings.token.regenerate':['confirm'],
  'activity':['projectId'],'snapshot':['projectId'],'job.start':['projectId','operation'],'job.status':['id'],'job.list':['projectId'],'job.retry':['id'],'job.cancel':['id']
 };
-const READ_ONLY=new Set('project.list project.get task.list task.get task.detail task.context task.bugs task.history task.blockers engineering.parallel.next engineering.git.inspect preview.list preview.get preview.context preview.revision.get preview.quality qa.list qa.get screenshot.list screenshot.inbox screenshot.get screenshot.compare screenshot.storage recorder.steps activity snapshot job.status job.list'.split(' '));
+const READ_ONLY=new Set('project.list project.get bootstrap next guide skills.list skills.get skills.route skills.reference task.list task.get task.detail task.context task.bugs task.history task.blockers engineering.parallel.next engineering.git.inspect preview.list preview.get preview.context preview.revision.get preview.quality qa.list qa.get screenshot.list screenshot.inbox screenshot.get screenshot.compare screenshot.storage recorder.steps activity snapshot job.status job.list'.split(' '));
 const PERSISTENT=new Set('recorder.start recorder.stop recorder.replay recorder.capture recorder.session.reset job.start job.status job.list job.retry job.cancel'.split(' '));
 export function describeOperation(operation:string):OperationContract {
  if(!Object.hasOwn(FIELDS,operation))throw new DomainError('UNKNOWN_OPERATION','Unknown Flowly operation',404);

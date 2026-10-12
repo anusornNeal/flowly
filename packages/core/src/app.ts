@@ -3,6 +3,12 @@ import { DomainError } from './models.js';
 import { LocalStore } from '../../db/src/store.js';
 import { Tasks } from './tasks.js';
 import { Engineering } from './engineering.js';
+import { SkillRegistry } from './skillRegistry.js';
+import { routeSkills } from './skillRouter.js';
+import { buildSkillGuide } from './skillGuide.js';
+import { getAgentBootstrap } from './skillBootstrap.js';
+import { getNextAction } from './skillNextAction.js';
+import { assessRisk } from './workflow.js';
 import { inspectGitCommit } from './gitEvidence.js';
 import { Previews } from './previews.js';
 import { Images } from './images.js';
@@ -11,11 +17,12 @@ import { runTaskBatch } from './taskBatch.js';
 import { compareImage, inspectRendered, renderApproved, targetScreen } from '../../capture/src/renderer.js';
 
 export class FlowlyApp {
- readonly store:LocalStore;readonly tasks:Tasks;readonly engineering:Engineering;readonly previews:Previews;readonly images:Images;readonly recorder:BrowserRecorder;
+ readonly store:LocalStore;readonly tasks:Tasks;readonly engineering:Engineering;readonly skills:SkillRegistry;readonly previews:Previews;readonly images:Images;readonly recorder:BrowserRecorder;
  constructor(root?:string){
   this.store=new LocalStore(root);
   this.tasks=new Tasks(this.store);
   this.engineering=new Engineering(this.store);
+  this.skills=new SkillRegistry(this.store);
   this.previews=new Previews(this.store,this.tasks);
   this.images=new Images(this.store,this.tasks,this.previews);
   this.recorder=new BrowserRecorder(this.store,this.tasks,this.images);
@@ -55,6 +62,7 @@ export class FlowlyApp {
 
 const OPERATIONS=[
  'project.list','project.create','project.update','project.get',
+ 'bootstrap','next','guide','skills.list','skills.get','skills.route','skills.reference','skills.import','skills.enable',
  'task.list','task.create','task.get','task.detail','task.context','task.batch','task.update','task.transition','task.tests',
  'task.checklist','task.subtask','task.review','task.bugs','task.bug.create','task.bug.resolve','task.post-done-bug',
  'task.history','task.blockers','engineering.size','engineering.decision.report','engineering.decision.resolve',
@@ -71,9 +79,39 @@ export function capabilities(){
  return {name:'flowly',version:1,localFirst:true,agentFirst:true,webRequiresAgent:false,
   transports:['cli-json','localhost-http'],approvalAuthority:['cli','web'],operations:OPERATIONS};
 }
+function selectSkillRoute(app:FlowlyApp,data:Record<string,any>){
+ const task=data.taskId?app.tasks.task(String(data.taskId)):undefined;
+ const projectId=data.projectId?String(data.projectId):task?.projectId;
+ if(task && projectId!==task.projectId)
+   throw new DomainError('PROJECT_MISMATCH','Task must belong to the selected project',409);
+ const project=projectId?app.tasks.project(projectId):undefined;
+ return {projectId,route:routeSkills(app.skills.list({projectId,includeDisabled:true}),{
+  intent:typeof data.intent==='string'?data.intent:'',
+  projectId,taskStatus:task?.status,risk:task?assessRisk(task):undefined,
+  platform:project?.platform,allowProjectGuidance:data.allowProjectGuidance===true,
+ })};
+}
+
 export async function execute(app:FlowlyApp,op:string,data:Record<string,any>,actor:Actor):Promise<unknown>{
  const t=app.tasks,p=app.previews,i=app.images,r=app.recorder;
  switch(op){
+  case 'bootstrap':return getAgentBootstrap(app,data);
+  case 'next':return getNextAction(app,data);
+  case 'skills.list':return app.skills.list({projectId:data.projectId,includeDisabled:data.includeDisabled===true});
+  case 'skills.get':return app.skills.get({id:String(data.id),projectId:data.projectId,version:data.version});
+  case 'skills.import':return app.skills.importProject({projectId:String(data.projectId),
+    content:String(data.content),version:data.version,triggers:data.triggers},actor);
+  case 'skills.enable':return app.skills.setEnabled({id:String(data.id),projectId:data.projectId,
+    version:data.version,enabled:data.enabled},actor);
+  case 'skills.reference':return app.skills.readReference({id:String(data.id),
+    projectId:data.projectId,version:data.version},String(data.reference));
+  case 'skills.route':return selectSkillRoute(app,data).route;
+  case 'guide':{
+   const selected=selectSkillRoute(app,data);
+   return buildSkillGuide(app.skills,selected.route,{projectId:selected.projectId,
+    maxChars:data.maxChars,allowProjectGuidance:data.allowProjectGuidance===true,
+    reference:data.reference});
+  }
   case 'project.list':return t.listProjects();
   case 'project.create':return t.createProject(data as Parameters<typeof t.createProject>[0],actor);
   case 'project.get':return t.project(String(data.id));
