@@ -8,6 +8,7 @@ import { routeSkills } from './skillRouter.js';
 import { buildSkillGuide } from './skillGuide.js';
 import { getAgentBootstrap } from './skillBootstrap.js';
 import { getNextAction } from './skillNextAction.js';
+import { preflightSkillAction } from './skillGateAdapter.js';
 import { assessRisk } from './workflow.js';
 import { inspectGitCommit } from './gitEvidence.js';
 import { Previews } from './previews.js';
@@ -62,7 +63,7 @@ export class FlowlyApp {
 
 const OPERATIONS=[
  'project.list','project.create','project.update','project.get',
- 'bootstrap','next','guide','skills.list','skills.get','skills.route','skills.reference','skills.import','skills.enable',
+ 'bootstrap','next','guide','skills.preflight','skills.list','skills.get','skills.route','skills.reference','skills.import','skills.enable',
  'task.list','task.create','task.get','task.detail','task.context','task.batch','task.update','task.transition','task.tests',
  'task.checklist','task.subtask','task.review','task.bugs','task.bug.create','task.bug.resolve','task.post-done-bug',
  'task.history','task.blockers','engineering.size','engineering.decision.report','engineering.decision.resolve',
@@ -97,6 +98,7 @@ export async function execute(app:FlowlyApp,op:string,data:Record<string,any>,ac
  switch(op){
   case 'bootstrap':return getAgentBootstrap(app,data);
   case 'next':return getNextAction(app,data);
+  case 'skills.preflight':return preflightSkillAction(app,data as Parameters<typeof preflightSkillAction>[1]);
   case 'skills.list':return app.skills.list({projectId:data.projectId,includeDisabled:data.includeDisabled===true});
   case 'skills.get':return app.skills.get({id:String(data.id),projectId:data.projectId,version:data.version});
   case 'skills.import':return app.skills.importProject({projectId:String(data.projectId),

@@ -9,6 +9,7 @@ const id=param(),projectId=param(),taskId=param(),previewId=param();
 const FIELDS:Record<string,Record<string,Param>>={
  'project.list':{},
  'bootstrap':{projectId,sessionId:param()},
+ 'skills.preflight':{projectId,taskId,operation:{type:'string',enum:['task.transition','task.review','qa.verdict','preview.approve','engineering.decision.resolve','engineering.parallel.status']},to:{type:'string',enum:['backlog','todo','in-progress','ready-for-review','done']},reason:param(),forceDone:param('boolean')},
  'next':{projectId,taskId,sessionId:param()},
  'guide':{intent:param(),projectId,taskId,maxChars:param('number'),allowProjectGuidance:param('boolean'),reference:param()},
  'skills.list':{projectId,includeDisabled:param('boolean')},
@@ -63,6 +64,7 @@ const FIELDS:Record<string,Record<string,Param>>={
  'job.start':{projectId,operation:param(),idempotencyKey:param(),input:param('object'),payload:param('object')},'job.status':{id},'job.list':{projectId,offset:param('number'),limit:param('number')},'job.retry':{id},'job.cancel':{id}
 };
 const REQUIRED:Record<string,string[]>={
+ 'skills.preflight':['projectId','taskId','operation'],
  'skills.get':['id'],'skills.reference':['id','reference'],'skills.import':['projectId','content'],'skills.enable':['id','enabled'],
  'project.create':['name'],'project.update':['id'],'project.get':['id'],
  'task.list':['projectId'],'task.create':['projectId','title'],'task.subtask':['projectId','parentId','title'],
@@ -86,7 +88,7 @@ const REQUIRED:Record<string,string[]>={
  'recorder.session.reset':['projectId','confirm'],'settings.token.regenerate':['confirm'],
  'activity':['projectId'],'snapshot':['projectId'],'job.start':['projectId','operation'],'job.status':['id'],'job.list':['projectId'],'job.retry':['id'],'job.cancel':['id']
 };
-const READ_ONLY=new Set('project.list project.get bootstrap next guide skills.list skills.get skills.route skills.reference task.list task.get task.detail task.context task.bugs task.history task.blockers engineering.parallel.next engineering.git.inspect preview.list preview.get preview.context preview.revision.get preview.quality qa.list qa.get screenshot.list screenshot.inbox screenshot.get screenshot.compare screenshot.storage recorder.steps activity snapshot job.status job.list'.split(' '));
+const READ_ONLY=new Set('project.list project.get bootstrap next guide skills.preflight skills.list skills.get skills.route skills.reference task.list task.get task.detail task.context task.bugs task.history task.blockers engineering.parallel.next engineering.git.inspect preview.list preview.get preview.context preview.revision.get preview.quality qa.list qa.get screenshot.list screenshot.inbox screenshot.get screenshot.compare screenshot.storage recorder.steps activity snapshot job.status job.list'.split(' '));
 const PERSISTENT=new Set('recorder.start recorder.stop recorder.replay recorder.capture recorder.session.reset job.start job.status job.list job.retry job.cancel'.split(' '));
 export function describeOperation(operation:string):OperationContract {
  if(!Object.hasOwn(FIELDS,operation))throw new DomainError('UNKNOWN_OPERATION','Unknown Flowly operation',404);

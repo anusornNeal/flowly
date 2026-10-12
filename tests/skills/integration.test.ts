@@ -75,3 +75,25 @@ test('project import remains project-scoped and cannot overwrite trusted builtin
  await assert.rejects(()=>execute(app,'skills.import',{projectId:p.id,
   content:content.replace('custom-qa','review')},actor),{code:'BUILTIN_SKILL_PROTECTED'});
 }));
+
+test('skills.preflight uses exact domain transition validator via CLI and HTTP without writes',()=>fixture(async(app,root)=>{
+ const p=app.tasks.createProject({name:'Domain gate'},actor);
+ const t=app.tasks.createTask({projectId:p.id,title:'Public contract',risk:{publicContract:true}},actor);
+ const history=app.tasks.activity(p.id);
+ const result=cli(root,'skills.preflight',['--projectId='+p.id,'--taskId='+t.id,
+   '--operation=task.transition','--to=in-progress']);
+ assert.equal(result.preflight,'blocked');
+ assert.equal(result.reasonCode,'DECISION_GATE_BLOCKED');
+ assert.ok(result.blockers.includes('DECISION_APPROVAL_REQUIRED'));
+ assert.equal(result.authoritative,false);
+ const server=await createServer({root});
+ try{
+  const response=await server.inject({method:'POST',url:'/api/operations/skills.preflight',
+    headers:{host:'localhost'},payload:{projectId:p.id,taskId:t.id,operation:'task.transition',to:'done'}});
+  assert.equal(response.statusCode,200);
+  assert.equal(response.json().result.preflight,'blocked');
+  assert.equal(response.json().result.readOnly,true);
+ }finally{await server.close();}
+ assert.equal(app.tasks.task(t.id).status,'backlog');
+ assert.deepEqual(app.tasks.activity(p.id),history);
+}));
