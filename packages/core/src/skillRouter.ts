@@ -13,7 +13,7 @@ type RouteCandidate = { id: string; reason: SkillReason };
 const intents = {
   author: /\b(card|task|author|spec|requirement|write ticket|create ticket)\b|การ์ด|เขียนสเปก|สร้างงาน|เขียนงาน/iu,
   source: /\b(jira|figma|atlas|source evidence|confluence|reference)\b|อ้างอิง|หลักฐานต้นทาง/iu,
-  split: /\b(parallel|decompos|split tasks|workstreams|dependencies)\b|ขนาน|แตกงาน|แยกงาน/iu,
+  split: /\b(parallel|decompos(?:e|ition)?|split tasks|workstreams|dependencies)\b|ขนาน|แตกงาน|แยกงาน/iu,
   code: /\b(implement|coding|code|refactor|bugfix|fix bug|develop|ship feature)\b|ลงมือทำ|ทำต่อให้เสร็จ|แก้โค้ด|แก้บั๊ก|พัฒนา|ทำฟีเจอร์/iu,
   loop: /\b(loop|continue|keep working|finish all|work through board|next card)\b|ทำต่อ|วนงาน|ทำให้จบ|ทำจนเสร็จ/iu,
   review: /\b(review|audit|inspect change|approve|reject)\b|รีวิว|ตรวจโค้ด|อนุมัติ|ตรวจงาน/iu,
