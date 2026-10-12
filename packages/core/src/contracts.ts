@@ -18,6 +18,20 @@ const FIELDS:Record<string,Record<string,Param>>={
  'skills.reference':{id,projectId,version:param(),reference:param()},
  'skills.import':{projectId,content:param(),version:param(),triggers:param('array')},
  'skills.enable':{id,projectId,version:param(),enabled:param('boolean')},
+ 'skills.session.claim':{projectId,taskId,streamId:param(),sessionId:param(),ttlSeconds:param('number')},
+ 'skills.session.list':{projectId,taskId,includeReleased:param('boolean')},
+ 'skills.session.renew':{projectId,id,sessionId:param(),ttlSeconds:param('number')},
+ 'skills.session.release':{projectId,id,sessionId:param()},
+ 'skills.audit.record':{projectId,taskId,skillId:param(),version:param(),sha256:param(),reason:param(),
+   operation:param(),sourceActivityId:param(),sessionId:param(),commitHash:param(),evidenceIds:param('array')},
+ 'skills.audit.list':{projectId,taskId,limit:param('number')},
+ 'skills.audit.report':{projectId,taskId},
+ 'skills.learning.propose':{projectId,skillId:param(),candidateVersion:param(),candidateContent:param(),
+   explanation:param(),evidenceIds:param('array')},
+ 'skills.learning.list':{projectId,includeClosed:param('boolean')},
+ 'skills.learning.get':{projectId,id},
+ 'skills.learning.decide':{projectId,id,verdict:{type:'string',enum:['approve','reject']},confirm:param(),reason:param()},
+ 'skills.learning.rollback':{projectId,id,confirm:param(),reason:param()},
  'project.create':{name:param(),platform:{type:'string',enum:['web','desktop','mobile']},baseUrl:param(),sourcePath:param(),uiContext:param('object')},
  'project.update':{id, name:param(),platform:param(),baseUrl:param(),sourcePath:param(),uiContext:param('object')},
  'project.get':{id},
@@ -65,6 +79,15 @@ const FIELDS:Record<string,Record<string,Param>>={
 };
 const REQUIRED:Record<string,string[]>={
  'skills.preflight':['projectId','taskId','operation'],
+ 'skills.session.claim':['projectId','taskId','streamId','sessionId'],
+ 'skills.session.list':['projectId'],'skills.session.renew':['projectId','id','sessionId'],
+ 'skills.session.release':['projectId','id','sessionId'],
+ 'skills.audit.record':['projectId','skillId','version','sha256','reason','operation'],
+ 'skills.audit.list':['projectId'],'skills.audit.report':['projectId','taskId'],
+ 'skills.learning.propose':['projectId','skillId','candidateVersion','candidateContent','explanation'],
+ 'skills.learning.list':['projectId'],'skills.learning.get':['projectId','id'],
+ 'skills.learning.decide':['projectId','id','verdict','reason'],
+ 'skills.learning.rollback':['projectId','id','confirm','reason'],
  'skills.get':['id'],'skills.reference':['id','reference'],'skills.import':['projectId','content'],'skills.enable':['id','enabled'],
  'project.create':['name'],'project.update':['id'],'project.get':['id'],
  'task.list':['projectId'],'task.create':['projectId','title'],'task.subtask':['projectId','parentId','title'],
@@ -88,7 +111,7 @@ const REQUIRED:Record<string,string[]>={
  'recorder.session.reset':['projectId','confirm'],'settings.token.regenerate':['confirm'],
  'activity':['projectId'],'snapshot':['projectId'],'job.start':['projectId','operation'],'job.status':['id'],'job.list':['projectId'],'job.retry':['id'],'job.cancel':['id']
 };
-const READ_ONLY=new Set('project.list project.get bootstrap next guide skills.preflight skills.list skills.get skills.route skills.reference task.list task.get task.detail task.context task.bugs task.history task.blockers engineering.parallel.next engineering.git.inspect preview.list preview.get preview.context preview.revision.get preview.quality qa.list qa.get screenshot.list screenshot.inbox screenshot.get screenshot.compare screenshot.storage recorder.steps activity snapshot job.status job.list'.split(' '));
+const READ_ONLY=new Set('project.list project.get bootstrap next guide skills.preflight skills.list skills.get skills.route skills.reference skills.session.list skills.audit.list skills.audit.report skills.learning.list skills.learning.get task.list task.get task.detail task.context task.bugs task.history task.blockers engineering.parallel.next engineering.git.inspect preview.list preview.get preview.context preview.revision.get preview.quality qa.list qa.get screenshot.list screenshot.inbox screenshot.get screenshot.compare screenshot.storage recorder.steps activity snapshot job.status job.list'.split(' '));
 const PERSISTENT=new Set('recorder.start recorder.stop recorder.replay recorder.capture recorder.session.reset job.start job.status job.list job.retry job.cancel'.split(' '));
 export function describeOperation(operation:string):OperationContract {
  if(!Object.hasOwn(FIELDS,operation))throw new DomainError('UNKNOWN_OPERATION','Unknown Flowly operation',404);

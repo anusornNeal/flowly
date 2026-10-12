@@ -9,6 +9,9 @@ import { buildSkillGuide } from './skillGuide.js';
 import { getAgentBootstrap } from './skillBootstrap.js';
 import { getNextAction } from './skillNextAction.js';
 import { preflightSkillAction } from './skillGateAdapter.js';
+import { SkillSessions } from './skillSession.js';
+import { SkillProvenance } from './skillProvenance.js';
+import { SkillLearning } from './skillLearning.js';
 import { assessRisk } from './workflow.js';
 import { inspectGitCommit } from './gitEvidence.js';
 import { Previews } from './previews.js';
@@ -18,12 +21,15 @@ import { runTaskBatch } from './taskBatch.js';
 import { compareImage, inspectRendered, renderApproved, targetScreen } from '../../capture/src/renderer.js';
 
 export class FlowlyApp {
- readonly store:LocalStore;readonly tasks:Tasks;readonly engineering:Engineering;readonly skills:SkillRegistry;readonly previews:Previews;readonly images:Images;readonly recorder:BrowserRecorder;
+ readonly store:LocalStore;readonly tasks:Tasks;readonly engineering:Engineering;readonly skills:SkillRegistry;readonly sessions:SkillSessions;readonly provenance:SkillProvenance;readonly learning:SkillLearning;readonly previews:Previews;readonly images:Images;readonly recorder:BrowserRecorder;
  constructor(root?:string){
   this.store=new LocalStore(root);
   this.tasks=new Tasks(this.store);
   this.engineering=new Engineering(this.store);
   this.skills=new SkillRegistry(this.store);
+  this.sessions=new SkillSessions(this.store);
+  this.provenance=new SkillProvenance(this.store,this.skills);
+  this.learning=new SkillLearning(this.store,this.skills);
   this.previews=new Previews(this.store,this.tasks);
   this.images=new Images(this.store,this.tasks,this.previews);
   this.recorder=new BrowserRecorder(this.store,this.tasks,this.images);
@@ -64,6 +70,9 @@ export class FlowlyApp {
 const OPERATIONS=[
  'project.list','project.create','project.update','project.get',
  'bootstrap','next','guide','skills.preflight','skills.list','skills.get','skills.route','skills.reference','skills.import','skills.enable',
+ 'skills.session.claim','skills.session.list','skills.session.renew','skills.session.release',
+ 'skills.audit.record','skills.audit.list','skills.audit.report',
+ 'skills.learning.propose','skills.learning.list','skills.learning.get','skills.learning.decide','skills.learning.rollback',
  'task.list','task.create','task.get','task.detail','task.context','task.batch','task.update','task.transition','task.tests',
  'task.checklist','task.subtask','task.review','task.bugs','task.bug.create','task.bug.resolve','task.post-done-bug',
  'task.history','task.blockers','engineering.size','engineering.decision.report','engineering.decision.resolve',
@@ -99,6 +108,18 @@ export async function execute(app:FlowlyApp,op:string,data:Record<string,any>,ac
   case 'bootstrap':return getAgentBootstrap(app,data);
   case 'next':return getNextAction(app,data);
   case 'skills.preflight':return preflightSkillAction(app,data as Parameters<typeof preflightSkillAction>[1]);
+  case 'skills.session.claim':return app.sessions.claim(data as Parameters<typeof app.sessions.claim>[0],actor);
+  case 'skills.session.list':return app.sessions.list(String(data.projectId),{taskId:data.taskId,includeReleased:data.includeReleased===true});
+  case 'skills.session.renew':return app.sessions.renew(data as Parameters<typeof app.sessions.renew>[0],actor);
+  case 'skills.session.release':return app.sessions.release(data as Parameters<typeof app.sessions.release>[0],actor);
+  case 'skills.audit.record':return app.provenance.record(data as Parameters<typeof app.provenance.record>[0],actor);
+  case 'skills.audit.list':return app.provenance.list(String(data.projectId),{taskId:data.taskId,limit:data.limit});
+  case 'skills.audit.report':return app.provenance.report(String(data.projectId),String(data.taskId));
+  case 'skills.learning.propose':return app.learning.propose(data as Parameters<typeof app.learning.propose>[0],actor);
+  case 'skills.learning.list':return app.learning.list(String(data.projectId),data.includeClosed===true);
+  case 'skills.learning.get':return app.learning.get(String(data.projectId),String(data.id));
+  case 'skills.learning.decide':return app.learning.decide(data as Parameters<typeof app.learning.decide>[0],actor);
+  case 'skills.learning.rollback':return app.learning.rollback(data as Parameters<typeof app.learning.rollback>[0],actor);
   case 'skills.list':return app.skills.list({projectId:data.projectId,includeDisabled:data.includeDisabled===true});
   case 'skills.get':return app.skills.get({id:String(data.id),projectId:data.projectId,version:data.version});
   case 'skills.import':return app.skills.importProject({projectId:String(data.projectId),
