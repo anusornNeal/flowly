@@ -214,6 +214,7 @@ export class Engineering {
  next(id:string) {const task=this.get(id);return {strategy:'parallel-first',ready:runnableStreams(task.engineering?.plan),plan:task.engineering?.plan,
    blockers:engineeringBlockers(task)};}
  setStreamStatus(id:string,streamId:string,status:Workstream['status'],actor:Actor,evidence?:string){
+  return this.store.transactionImmediate(()=>{
   const task=this.get(id);active(task);
   if(task.status!=='in-progress')throw new DomainError('WORKSTREAM_NOT_READY','Move the task into In Progress after decision approval');
   if(engineeringBlockers(task).length)throw new DomainError('DECISION_GATE_BLOCKED','Approve the current decision before continuing workstreams');
@@ -230,5 +231,6 @@ export class Engineering {
   const workstreams=plan.workstreams.map(s=>s.id===streamId?{...s,status}:s);
   return this.save({...task,engineering:{...task.engineering!,plan:{...plan,workstreams,updatedAt:now()}}},
    'engineering.parallel.status',actor,{streamId,status,evidence:status==='done'?evidence:undefined});
+  });
  }
 }

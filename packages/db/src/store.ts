@@ -38,6 +38,9 @@ export class LocalStore {
  }
  close() { this.raw.close(); }
  transaction<T>(fn: () => T): T { return this.raw.transaction(fn)(); }
+ // Acquire the SQLite write lock before reading shared task state to avoid
+ // lost updates when independent agents complete workstreams concurrently.
+ transactionImmediate<T>(fn: () => T): T { return this.raw.transaction(fn).immediate(); }
  // Uses the exact domain mutation and SQLite SAVEPOINTs but always rolls back all
  // records, audit and idempotency entries. Only call for DB-only commands.
  dryRun<T>(fn:()=>T):T {
