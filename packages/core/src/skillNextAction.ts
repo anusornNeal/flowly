@@ -16,11 +16,11 @@ export type NextActionResult = {
   blockers: string[];
   prerequisites: string[];
   candidates?: Array<{ id: string; displayId: string; status: TaskRecord['status'] }>;
-  ownership: { status: 'UNSUPPORTED'; message: string };
+  ownership: { status: 'UNRESOLVED'|'AVAILABLE'|'OWNED'|'FOREIGN'|'EXPIRED'; message: string; claimIds?: string[] };
 };
 const ownership: NextActionResult['ownership'] = {
-  status: 'UNSUPPORTED',
-  message: 'Durable claims/leases are not implemented. No ownership inferred from sessionId.',
+  status: 'UNRESOLVED',
+  message: 'Project/task must be pinned before consulting durable ownership.',
 };
 const order: Record<TaskRecord['status'], number> = {
   'in-progress': 0, 'ready-for-review': 1, todo: 2, backlog: 3, done: 4,
@@ -46,7 +46,7 @@ function pendingJob(app: FlowlyApp, projectId: string, taskId?: string): JobReco
     a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0];
 }
 /** No writes, no side effects: exact project pinning and authoritative blockers only. */
-export function getNextAction(app: FlowlyApp, input: NextActionInput = {}): NextActionResult {
+function computeNextAction(app: FlowlyApp, input: NextActionInput = {}): NextActionResult {
   const projects = app.tasks.listProjects();
   if (input.projectId && !projects.some(p => p.id === input.projectId))
     throw new DomainError('NOT_FOUND', 'Selected project does not exist', 404);
@@ -134,4 +134,32 @@ function jobAction(projectId: string, taskId: string | undefined, job: JobRecord
     retryable?'JOB_INTERRUPTED':'JOB_ACTIVE',[],{id:job.id},
     [retryable?'Inspect interrupted operation before explicit job.retry; never silently replay.':
       'Inspect same running or queued Job; do not start a duplicate.']);
+}
+
+/** Read-only Next Action plus actual durable lease state; a suggestion never acquires a lease. */
+export function getNextAction(app: FlowlyApp, input: NextActionInput = {}): NextActionResult {
+ const suggestion=computeNextAction(app,input);
+ if(!suggestion.projectId||!suggestion.taskId)return suggestion;
+ const leases=app.sessions.list(suggestion.projectId,{taskId:suggestion.taskId});
+ if(!leases.length)return {...suggestion,ownership:{
+  status:'AVAILABLE',message:'No active lease; inspect engineering.parallel.next and claim scoped work explicitly.'
+ }};
+ const own=leases.find(c=>c.sessionId===input.sessionId);
+ if(own){
+  if(own.availability==='expired')return {...suggestion,operation:'skills.session.renew',
+   reason:'OWN_SESSION_EXPIRED',params:{projectId:suggestion.projectId,id:own.id,sessionId:own.sessionId},
+   ownership:{status:'EXPIRED',message:'Your persisted lease expired. Renew explicitly with same actor/session.',claimIds:[own.id]}};
+  return {...suggestion,ownership:{status:'OWNED',
+   message:'Current session has an active persisted workstream lease. Respect its paths.',
+   claimIds:leases.map(c=>c.id)}};
+ }
+ const expired=leases.some(c=>c.availability==='expired');
+ return {...suggestion,operation:'skills.session.list',
+  reason:expired?'EXPIRED_SESSION_ATTENTION':'FOREIGN_SESSION_CLAIMED',
+  blockers:[...suggestion.blockers,expired?'EXPIRED_LEASE_NOT_RELEASED':'FOREIGN_WORKSTREAM_CLAIM'],
+  params:{projectId:suggestion.projectId,taskId:suggestion.taskId},
+  ownership:{status:expired?'EXPIRED':'FOREIGN',
+   message:expired?'Expired foreign WIP is NOT free to steal. Owner release or reviewed recovery required.':
+    'Other sessions own workstreams. Inspect paths before any parallel work.',
+   claimIds:leases.map(c=>c.id)}};
 }

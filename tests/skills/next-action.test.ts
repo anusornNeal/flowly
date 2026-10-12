@@ -26,7 +26,7 @@ test('high risk card recommends the true decision gate, read only',()=>fixture(a
  const x=getNextAction(app,{projectId:p.id,taskId:task.id,sessionId:'new-chat'});
  assert.equal(x.operation,'engineering.decision.report');
  assert.equal(x.reason,'DECISION_REQUIRED');
- assert.equal(x.ownership.status,'UNSUPPORTED');
+ assert.equal(x.ownership.status,'AVAILABLE');
  assert.ok(x.blockers.includes('DECISION_APPROVAL_REQUIRED'));
  assert.equal(app.tasks.task(task.id).status,'backlog');
  assert.deepEqual(app.tasks.activity(p.id),history);
