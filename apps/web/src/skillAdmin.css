@@ -1,0 +1,61 @@
+.skill-admin{display:flex;flex-direction:column;gap:19px;min-width:0;max-width:100%;padding-bottom:32px}
+.skill-admin .page-heading{margin-bottom:0}
+.skill-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.skill-kpis article{padding:17px 20px;background:#fff;border:1px solid #e2e8f1;border-radius:13px;min-width:0;display:flex;flex-direction:column;gap:6px}
+.skill-kpis span,.skill-kpis small{font-size:12px;color:#738098}.skill-kpis strong{font:600 28px/1.15 var(--font-secondary);color:#17263f}
+.skill-two-column{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:16px;min-width:0}
+.skill-right-column{display:flex;flex-direction:column;gap:16px;min-width:0}
+.skill-panel{padding:19px;min-width:0;overflow:hidden}
+.skill-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;color:#657592;margin-bottom:15px}
+.skill-panel-head h2{font-size:17px;font-weight:600;margin:3px 0}.skill-panel-head p{color:#75819a;font-size:12px;margin:2px 0}
+.skill-toolbar{display:flex;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap}
+.skill-search{display:flex;align-items:center;gap:8px;flex:1;min-width:170px;border:1px solid #e0e6f0;border-radius:9px;background:white;padding:0 11px;color:#73819b}
+.skill-search input{border:none;box-shadow:none;padding:9px 1px;width:100%;min-width:50px}
+.skill-filter{font-size:12px;color:#6b7990;display:flex;align-items:center;gap:5px}
+.skill-filter select{font-size:12px;padding:8px 10px}.skill-filter>svg{display:none}
+.skill-catalog,.skill-timeline{display:flex;flex-direction:column;gap:0;max-height:420px;overflow-y:auto;overscroll-behavior:contain}
+.skill-line{padding:13px 3px;border-top:1px solid #eef1f6;display:flex;align-items:center;gap:10px;justify-content:space-between;min-width:0}
+.skill-line-copy{flex:1;min-width:0}
+.skill-line-title{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.skill-line-title strong,.skill-history-item strong{font-weight:600;font-size:13px;color:#1b2941}
+.skill-line p{font-size:12px;color:#707d92;margin:4px 0 2px;line-height:1.45;overflow-wrap:anywhere}
+.skill-line small,.skill-history-item small{color:#8b98a9;font-size:11px}
+.skill-version{font:500 11px var(--font-secondary);color:#77849a;background:#f0f3f8;border-radius:5px;padding:3px 6px}
+.skill-status{font-size:10px;font-weight:600;border-radius:999px;padding:3px 7px}
+.skill-status.is-on{color:#1e7854;background:#e5f7ed}.skill-status.is-off{color:#888f9c;background:#eceef2}
+.skill-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.skill-actions>button{font-size:12px;color:#5268a4;border:1px solid #e1e6ef;background:#fff;border-radius:8px;padding:8px 10px}
+.skill-icon-action{display:inline-grid;place-items:center;border:1px solid #e0e6ef;background:white;border-radius:8px;padding:8px;color:#536482}
+.skill-blank{padding:22px 5px;text-align:center;color:#9aa4b6;font-size:12px}
+.skill-next{padding:14px;background:#f6f8fc;border:1px solid #e9edf5;border-radius:10px;display:flex;flex-direction:column;gap:9px;min-width:0;overflow-wrap:anywhere}
+.skill-next strong{font-family:var(--font-secondary);font-weight:600;font-size:14px}
+.skill-next p{color:#a75b31;margin:0;line-height:1.5}
+.skill-next small{color:#78849b;font-size:11px}
+.skill-reason{font-size:10px;letter-spacing:.5px;color:#647cb6;font-weight:600}
+.skill-route-form,.skill-proposal-form{display:flex;flex-direction:column;gap:10px}
+.skill-route-form label,.skill-proposal-form label,.skill-decision-form label{font-size:12px;font-weight:600;color:#4f5e76}
+.skill-route-form textarea{width:100%;min-height:72px}
+.skill-route-form button{align-self:flex-start}
+.skill-route-result{background:#f5f8fe;border-radius:9px;padding:12px;margin-top:12px}
+.skill-route-result>small{display:block;font-size:11px;color:#7185a0;margin-bottom:6px}
+.skill-route-result>div{display:flex;align-items:center;gap:7px;padding:5px 0;color:#405776;font-size:12px}
+.skill-editor .skill-text-preview{max-height:250px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:#35445b;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;background:#f7f8fb;padding:15px;border-radius:9px;border:1px solid #e8edf5}
+.skill-proposal-form{border-top:1px solid #e8ebf3;padding-top:16px}
+.skill-proposal-form label{display:flex;flex-direction:column;gap:6px}
+.skill-proposal-form label input,.skill-proposal-form textarea{width:100%}
+.skill-fields{display:grid;grid-template-columns:minmax(0,.55fr) minmax(0,1fr);gap:12px}
+.skill-proposal-form button{align-self:flex-start}
+.skill-disclaimer{font-size:12px;color:#7c8698}
+.skill-history-item{display:flex;flex-direction:column;gap:5px;padding:12px 4px;border:0;border-top:1px solid #edf0f6;text-align:left;background:none;width:100%;color:inherit;min-width:0}
+.skill-history-item.selected{background:#f2f6ff}
+.skill-history-item>span{display:flex;align-items:center;gap:5px}
+.skill-history-item p{font-size:12px;line-height:1.5;color:#68768d;margin:0;overflow-wrap:anywhere}
+.skill-decision-form{border-top:1px solid #edf0f6;margin-top:10px;padding-top:13px;display:flex;flex-direction:column;gap:10px}
+.skill-decision-form>p{max-height:100px;overflow-y:auto;white-space:pre-wrap;background:#f7f9fc;color:#66738b;font-size:12px;padding:8px}
+.skill-decision-form label{display:flex;flex-direction:column;gap:5px}
+.skill-decision-actions{display:flex;gap:8px;align-items:center}
+.skill-alert{padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:15px;border:1px solid #d5e9dc;background:#eef9f1;color:#286242;border-radius:9px;font-size:12px}
+.skill-alert-error{border-color:#f4d2d3;background:#fff1f2;color:#a93642}
+.skill-alert button{display:grid;place-items:center;color:inherit;background:transparent;border:0;padding:3px}
+@media(max-width:1100px){.skill-two-column{grid-template-columns:1fr}.skill-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.skill-right-column{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}
+@media(max-width:640px){.skill-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.skill-kpis article{padding:12px}.skill-kpis strong{font-size:24px}.skill-panel{padding:13px}.skill-right-column{grid-template-columns:1fr}.skill-line{align-items:flex-start;flex-wrap:wrap}.skill-actions{width:100%;justify-content:flex-end}.skill-fields{grid-template-columns:1fr}.skill-toolbar{align-items:stretch}.skill-filter{flex:1;justify-content:flex-end}}

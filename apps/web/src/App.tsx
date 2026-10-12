@@ -6,8 +6,9 @@ import type { Actor, ChecklistItem, Preview, Project, QaCase, ScreenSpec, Screen
 import { type Detail, type Snapshot, get, op, upload, dateLabel, fileUrl, baselineUrl, diffUrl } from './api.js';
 import { previewDocument } from './previewDocument.js';
 import EngineeringPanel from './EngineeringPanel.js';
+import SkillAdmin from './SkillAdmin.js';
 
-type Page='overview'|'board'|'task'|'preview'|'settings';
+type Page='overview'|'board'|'task'|'preview'|'skills'|'settings';
 type Tab='summary'|'decision'|'implementation'|'parallel'|'checklist'|'subtasks'|'bugs'|'qa'|'history';
 const lanes=['backlog','todo','in-progress','ready-for-review','done'] as const;
 const laneNames:Record<string,string>={'backlog':'Backlog','todo':'To-do','in-progress':'In progress','ready-for-review':'Ready for review','done':'Done'};
@@ -16,7 +17,7 @@ const dateTime=(v?:string)=>dateLabel(v);
 const amount=(v:number)=>v>=1048576?(v/1048576).toFixed(1)+' MB':(v/1024).toFixed(1)+' KB';
 const safeJson=(text:string,label:string):any=>{try{return JSON.parse(text);}catch{throw new Error('Invalid JSON: '+label);}};
 const defaultScreen=():ScreenSpec=>({id:'screen-'+Math.random().toString(36).slice(2,7),name:'New screen',stateId:'default',viewport:{width:1280,height:800,device:'desktop'},required:true});
-const navList:[Page,typeof Grid2X2][]=[['overview',Grid2X2],['board',FolderKanban],['task',ListChecks],['preview',FileImage],['settings',Settings]];
+const navList:[Page,typeof Grid2X2][]=[['overview',Grid2X2],['board',FolderKanban],['task',ListChecks],['preview',FileImage],['skills',WandSparkles],['settings',Settings]];
 function Pill({children,tone='neutral'}:{children:React.ReactNode;tone?:string}){return <span className={'pill pill-'+tone}>{children}</span>;}
 function Empty({title,body}:{title:string;body?:string}){return <div className="empty"><CircleDashed size={24}/><strong>{title}</strong>{body&&<p>{body}</p>}</div>;}
 function Stamp({value}:{value?:string}){return <time>{dateTime(value)}</time>;}
@@ -204,7 +205,7 @@ export default function App(){
  },[screenIndex,selectedPreview]);
  const screens=draft?.screens||[];
  const visibleScreenshots=deletedShown?historyImages.filter(s=>s.status==='deleted'):(snapshot?.screenshots||[]);
- const menuName:Record<Page,string>={overview:'Overview',board:'Task Board',task:'Task Detail',preview:'Preview & Visual QA',settings:'Settings'};
+ const menuName:Record<Page,string>={overview:'Overview',board:'Task Board',task:'Task Detail',preview:'Preview & Visual QA',skills:'Skill Engine',settings:'Settings'};
  return <div className="flowly-app">
   <aside className="sidebar">
    <div className="brand"><div className="brand-mark"><span/><span/><span/><span/></div><strong>flowly</strong></div>
@@ -215,7 +216,7 @@ export default function App(){
     </select></span><ChevronDown size={15}/></label>
    <span className="nav-eyebrow">WORKSPACE</span>
    <nav className="nav-list" aria-label="Main navigation">
-    {navList.slice(0,4).map(([key,Icon])=><button key={key} type="button" className={'nav-btn'+(page===key?' is-active':'')} onClick={()=>setPage(key)}>
+    {navList.slice(0,5).map(([key,Icon])=><button key={key} type="button" className={'nav-btn'+(page===key?' is-active':'')} onClick={()=>setPage(key)}>
      <Icon size={18}/><span>{menuName[key]}</span>{key==='board'&&<em>{tasks.length}</em>}
     </button>)}
    </nav>
@@ -236,6 +237,7 @@ export default function App(){
    </header>
    {notice&&<div className={'toast'+(notice.error?' error':'')} role="status"><span>{notice.text}</span><button title="Dismiss" onClick={()=>setNotice(null)}><X size={15}/></button></div>}
    <main className="main-content">
+    {page==='skills'&&<SkillAdmin projectId={projectId}/>}
     {page==='overview'&&<>
      <header className="page-heading"><div><div className="eyebrow">WORKSPACE PULSE / LIVE DATA</div><h1>Keep every delivery in view<span className="dot">.</span></h1><p>Tasks, agent actions and quality gates in one place.</p></div>
      <button className="outline-button" onClick={()=>void refresh()}><RefreshCw size={15}/> Refresh</button></header>
