@@ -26,6 +26,7 @@ export default function SkillAdmin({projectId}:{projectId:string}){
  const [proposals,setProposals]=useState<Proposal[]>([]);
  const [next,setNext]=useState<Next|null>(null);
  const [intent,setIntent]=useState('Continue implementing the next eligible card');
+ const [allowProjectGuidance,setAllowProjectGuidance]=useState(false);
  const [route,setRoute]=useState<Route|null>(null);
  const [filter,setFilter]=useState<Filter>('all');
  const [query,setQuery]=useState('');
@@ -85,7 +86,7 @@ export default function SkillAdmin({projectId}:{projectId:string}){
  };
  const previewRoute=async(e:FormEvent)=>{
   e.preventDefault();setBusy(true);setError('');
-  try{setRoute(await op<Route>('skills.route',{projectId,intent}));}
+  try{setRoute(await op<Route>('skills.route',{projectId,intent,allowProjectGuidance}));}
   catch(e){setError(String(e));}finally{setBusy(false);}
  };
  const propose=async(e:FormEvent)=>{
@@ -162,6 +163,7 @@ export default function SkillAdmin({projectId}:{projectId:string}){
       <p>Preview chosen Skills without triggering workflow actions</p></div><Sparkles size={18}/></header>
      <form onSubmit={previewRoute} className="skill-route-form">
       <label htmlFor="skill-intent">Agent intent</label><textarea id="skill-intent" rows={2} value={intent} onChange={e=>setIntent(e.target.value)}/>
+      <label className="skill-project-opt"><input type="checkbox" checked={allowProjectGuidance} onChange={e=>setAllowProjectGuidance(e.target.checked)} />Include project guidance</label>
       <button className="outline-button" type="submit" disabled={busy||!intent.trim()}>Evaluate route</button>
      </form>
      {route&&<div className="skill-route-result"><small>Reason: {route.reason}</small>

@@ -59,3 +59,6 @@
 .skill-alert button{display:grid;place-items:center;color:inherit;background:transparent;border:0;padding:3px}
 @media(max-width:1100px){.skill-two-column{grid-template-columns:1fr}.skill-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.skill-right-column{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}
 @media(max-width:640px){.skill-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.skill-kpis article{padding:12px}.skill-kpis strong{font-size:24px}.skill-panel{padding:13px}.skill-right-column{grid-template-columns:1fr}.skill-line{align-items:flex-start;flex-wrap:wrap}.skill-actions{width:100%;justify-content:flex-end}.skill-fields{grid-template-columns:1fr}.skill-toolbar{align-items:stretch}.skill-filter{flex:1;justify-content:flex-end}}
+
+.skill-route-form .skill-project-opt{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;color:#64758c;cursor:pointer}
+.skill-project-opt input{width:16px;height:16px;margin:0;flex-shrink:0}
