@@ -30,6 +30,10 @@ Linked subtasks are independent Tasks, each with their own lane, Review and QA. 
 
 Validation failures return structured domain error codes and blocker lists where applicable (including `INVALID_LANE`, `DONE_IS_TERMINAL`, `TESTS_NOT_PASSED`, `REQUIRED_QA_NOT_CURRENT`, `REVIEW_NOT_APPROVED`, `REVIEW_SKIP_REASON_REQUIRED`, `UNFINISHED_SUBTASKS`, `FORCE_DONE_REASON_REQUIRED`, and `DONE_BLOCKED`). Actor/channel, before/after lane, timestamp, decisions and evidence are appended to the local audit history.
 
+## Engineering Delivery Standard (post-V1 extension)
+
+In addition to the existing Test/Review/Preview/QA gates above, Large/Critical work requires a current approved alternatives-and-trade-offs report and explicit parallel workstream plan before In Progress. Before Ready for Review/Done it requires an evidence-backed implementation report and completed workstreams. CLI and Web invoke the same domain checks. See [ENGINEERING-STANDARD.md](ENGINEERING-STANDARD.md) for policies and operations.
+
 ## Regression evidence
 
 `tests/domain.test.ts`, `tests/advanced.test.ts` and `tests/revisions.test.ts` cover deterministic risk and Done, Force Done audit, Review reject/Bug roundtrip, Approved revision case refresh, WAIVED case receipt semantics and immutable post-Done behavior. `npm test`, `npm run typecheck`, `npm run build` and `npm run smoke` are the repository-wide checks.

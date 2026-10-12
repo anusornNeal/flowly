@@ -25,6 +25,10 @@ CLI writes directly through the same domain services, validation, audit and SQLi
 
 Use --input=@my-input.json to send complex command parameters. Recorder Start/Stop/Replay/Capture commands connect to the persistent local Flowly API service, launching it automatically when needed. The Web UI need not be open. Set FLOWLY_DATA_DIR before launching to choose the shared database. task.batch accepts projectId, optional idempotencyKey and a list of Task operations. Batches are atomic and idempotent with conflict detection. Discover available operations using capabilities.
 
+## Engineering reports and Parallel-first delivery
+
+All projects use the [Engineering Delivery Standard](docs/ENGINEERING-STANDARD.md): parallel-first workstream planning, versioned pre-implementation alternatives and decision approval for Large/Critical work, and evidence-backed post-implementation reports before review. The CLI/API and Task Detail share enforced gates and audit history; no passive evidence auto-approves a decision, QA verdict or review.
+
 ## Preview / Quality workflow
 
 Attach a Preview to a Task; author interactive HTML/CSS/JS, explicitly define Screen + State + Viewport tuples, save Draft, freeze Revision and explicitly Approve. Approved revisions and their UI-context snapshots are immutable. Approval runs real Chromium rendering checks: critical layout/runtime defects block approval; advisory warnings require explicit acceptance and a reason. QA Cases are created only from explicitly approved tuples.
