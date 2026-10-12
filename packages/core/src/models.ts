@@ -1,4 +1,5 @@
 import type { Lane, ReviewMode, Risk, QaVerdict } from './workflow.js';
+import type { EngineeringRecord } from './engineering.js';
 
 export type TargetPlatform = 'web' | 'desktop' | 'mobile';
 export type Actor = { actor: string; channel: 'cli' | 'web' };
@@ -19,6 +20,7 @@ export type TaskRecord = {
  priority: 'low' | 'medium' | 'high'; reviewMode: ReviewMode; reviewSkipReason?: string;
  risk: RiskFactors; acceptanceCriteria: string; verificationStep: string;
  checklist: ChecklistItem[]; childIds: string[];
+ engineering?: EngineeringRecord;
  testsPassed: boolean; reviewApproved: boolean; currentReviewId?: string;
  createdAt: string; updatedAt: string; doneAt?: string;
 };

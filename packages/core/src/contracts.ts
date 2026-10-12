@@ -10,9 +10,9 @@ const FIELDS:Record<string,Record<string,Param>>={
  'project.create':{name:param(),platform:{type:'string',enum:['web','desktop','mobile']},baseUrl:param(),sourcePath:param(),uiContext:param('object')},
  'project.update':{id, name:param(),platform:param(),baseUrl:param(),sourcePath:param(),uiContext:param('object')},
  'project.get':{id},
- 'task.list':{projectId},'task.create':{projectId,title:param(),description:param(),risk:param('object'),reviewMode:param()},
- 'task.subtask':{projectId,parentId:param(),title:param()},'task.get':{id},'task.detail':{id},
- 'task.context':{id},'task.update':{id,title:param(),description:param(),risk:param('object'),priority:param(),reviewSkipReason:param()},
+ 'task.list':{projectId},'task.create':{projectId,title:param(),description:param(),risk:param('object'),reviewMode:param(),priority:param(),acceptanceCriteria:param(),verificationStep:param()},
+ 'task.subtask':{projectId,parentId:param(),title:param(),description:param(),risk:param('object'),reviewMode:param(),priority:param(),acceptanceCriteria:param(),verificationStep:param()},'task.get':{id},'task.detail':{id},
+ 'task.context':{id},'task.update':{id,title:param(),description:param(),risk:param('object'),priority:param(),reviewSkipReason:param(),acceptanceCriteria:param(),verificationStep:param()},
  'task.transition':{id,to:{type:'string',enum:['backlog','todo','in-progress','ready-for-review','done']},reason:param(),forceDone:param('boolean')},
  'task.tests':{id,passed:param('boolean'),evidence:param()},
  'task.checklist':{id,action:{type:'string',enum:['add','edit','toggle','remove','reorder']},itemId:param(),text:param(),done:param('boolean'),index:param('number')},
@@ -22,6 +22,12 @@ const FIELDS:Record<string,Record<string,Param>>={
  'task.bug.resolve':{id,reason:param()},
  'task.post-done-bug':{id,title:param(),description:param()},
  'task.history':{projectId,id},'task.blockers':{id},
+ 'engineering.size':{id,size:{type:'string',enum:['auto','small','medium','large','critical']}},
+ 'engineering.decision.report':{id,report:param('object')},
+ 'engineering.decision.resolve':{id,verdict:{type:'string',enum:['approve','request-changes','reject']},selectedOptionId:param(),reason:param()},
+ 'engineering.implementation.report':{id,report:param('object')},'engineering.git.inspect':{id,commit:param()},
+ 'engineering.parallel.plan':{id,workstreams:param('array')},
+ 'engineering.parallel.next':{id},'engineering.parallel.status':{id,streamId:param(),status:{type:'string',enum:['pending','in-progress','done']},evidence:param()},
  'preview.list':{projectId},'preview.create':{projectId,taskId,name:param(),html:param(),css:param(),js:param(),screens:param('array')},
  'preview.get':{id},'preview.draft':{id,html:param(),css:param(),js:param(),screens:param('array')},
  'preview.context':{id},'preview.context.refresh':{id},
@@ -54,6 +60,10 @@ const REQUIRED:Record<string,string[]>={
  'task.review':['id','verdict'],'task.bugs':['id'],'task.bug.create':['id','origin','fingerprint','title','description'],
  'task.bug.resolve':['id','reason'],'task.post-done-bug':['id','title','description'],
  'task.history':['projectId'],'task.blockers':['id'],
+ 'engineering.size':['id','size'],'engineering.decision.report':['id','report'],
+ 'engineering.decision.resolve':['id','verdict','reason'],
+ 'engineering.implementation.report':['id','report'],'engineering.git.inspect':['id','commit'],'engineering.parallel.plan':['id','workstreams'],
+ 'engineering.parallel.next':['id'],'engineering.parallel.status':['id','streamId','status'],
  'preview.list':['projectId'],'preview.create':['projectId','name'],'preview.get':['id'],'preview.draft':['id'],
  'preview.context':['id'],'preview.context.refresh':['id'],'preview.revision.save':['id'],
  'preview.revision.get':['id'],'preview.approve':['id','revisionId'],'preview.quality':['revisionId'],
@@ -65,7 +75,7 @@ const REQUIRED:Record<string,string[]>={
  'recorder.session.reset':['projectId','confirm'],'settings.token.regenerate':['confirm'],
  'activity':['projectId'],'snapshot':['projectId'],'job.start':['projectId','operation'],'job.status':['id'],'job.list':['projectId'],'job.retry':['id'],'job.cancel':['id']
 };
-const READ_ONLY=new Set('project.list project.get task.list task.get task.detail task.context task.bugs task.history task.blockers preview.list preview.get preview.context preview.revision.get preview.quality qa.list qa.get screenshot.list screenshot.inbox screenshot.get screenshot.compare screenshot.storage recorder.steps activity snapshot job.status job.list'.split(' '));
+const READ_ONLY=new Set('project.list project.get task.list task.get task.detail task.context task.bugs task.history task.blockers engineering.parallel.next engineering.git.inspect preview.list preview.get preview.context preview.revision.get preview.quality qa.list qa.get screenshot.list screenshot.inbox screenshot.get screenshot.compare screenshot.storage recorder.steps activity snapshot job.status job.list'.split(' '));
 const PERSISTENT=new Set('recorder.start recorder.stop recorder.replay recorder.capture recorder.session.reset job.start job.status job.list job.retry job.cancel'.split(' '));
 export function describeOperation(operation:string):OperationContract {
  if(!Object.hasOwn(FIELDS,operation))throw new DomainError('UNKNOWN_OPERATION','Unknown Flowly operation',404);

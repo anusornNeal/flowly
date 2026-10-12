@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { LocalStore } from '../../db/src/store.js';
 import { assessRisk, attemptTransition, type Lane, type ReviewMode } from './workflow.js';
+import { engineeringBlockers, reportBlockers, decisionRequired } from './engineering.js';
 import type { Actor, BugThread, ChecklistItem, Project, ReviewerDecision, RiskFactors, TaskRecord, QaCase, Preview } from './models.js';
 import { DomainError, now, requireText } from './models.js';
 
@@ -58,7 +59,7 @@ export class Tasks {
    const task:TaskRecord={id,displayId,projectId:data.projectId,title,description:data.description??'',type:data.type||'task',parentId:data.parentId,
     originTaskId:data.originTaskId,status:'backlog',priority:member(data.priority||'medium',priorities,'priority'),reviewMode:member(data.reviewMode||'auto',reviews,'review mode'),
     risk:data.risk||{},acceptanceCriteria:data.acceptanceCriteria||'',verificationStep:data.verificationStep||'',
-    checklist:[],childIds:[],testsPassed:false,reviewApproved:false,createdAt:t,updatedAt:t};
+    checklist:[],childIds:[],engineering:{size:'auto'},testsPassed:false,reviewApproved:false,createdAt:t,updatedAt:t};
    this.store.put('task',task);
    if(data.parentId){ const parent=this.task(data.parentId);this.store.put('task',{...parent,childIds:[...parent.childIds,id],updatedAt:t}); }
    this.audit(actor,data.projectId,'task.create',id,undefined,'backlog',{displayId,parentId:data.parentId,originTaskId:data.originTaskId});
@@ -75,7 +76,10 @@ export class Tasks {
   if(next.reviewMode==='skip-review' && assessRisk(next)!=='LOW' && !next.reviewSkipReason?.trim())
    throw new DomainError('REVIEW_SKIP_REASON_REQUIRED','Manual Review bypass at medium/high risk requires a reason');
   const substantive=['description','risk','acceptanceCriteria','verificationStep','title'].some(key=>key in input);
-  if(substantive){next.testsPassed=false;next.reviewApproved=false;}
+  if(substantive){
+   next.testsPassed=false;next.reviewApproved=false;
+   if(next.engineering?.decision)next.engineering={...next.engineering,decision:{...next.engineering.decision,decision:undefined}};
+  }
   this.store.transaction(()=>{this.store.put('task',next);this.audit(actor,task.projectId,'task.update',id,undefined,undefined,{fields:Object.keys(input),risk:assessRisk(next)});});
   return next;
  }
@@ -100,6 +104,8 @@ export class Tasks {
   if(this.store.list<Preview>('preview',{taskId:id}).some(p=>!p.approvedRevisionId))reasons.push('PREVIEW_APPROVAL_REQUIRED');
   if((task.reviewMode==='require-review'||task.reviewMode==='auto'&&assessRisk(task)!=='LOW')&&!task.reviewApproved)reasons.push('REVIEW_NOT_APPROVED');
   if(task.reviewMode==='skip-review'&&assessRisk(task)!=='LOW'&&!task.reviewSkipReason?.trim())reasons.push('REVIEW_SKIP_REASON_REQUIRED');
+  reasons.push(...engineeringBlockers(task));
+  if(task.status==='ready-for-review'||task.status==='done')reasons.push(...reportBlockers(task));
   return reasons;
  }
  private currentQa(task:TaskRecord,cases:QaCase[]){
@@ -117,6 +123,15 @@ export class Tasks {
    ...task,
    requiredQa:cases.filter(c=>c.required).map(c=>({id:c.id,approvedRevision:c.revisionId,currentApprovedRevision:c.revisionId,verdict:c.verdict})),
   };
+  if(to==='in-progress' && task.status!=='in-progress') {
+   const preflight=engineeringBlockers(task);
+   if(preflight.length)throw new DomainError('DECISION_GATE_BLOCKED','Approve a current decision and parallel plan before implementation',409,{blockers:preflight});
+  }
+  if(to==='ready-for-review'||to==='done') {
+   const preflight=[...engineeringBlockers(task),...reportBlockers(task)];
+   if(decisionRequired(task) && task.engineering?.plan?.workstreams.some(s=>s.status!=='done'))preflight.push('PARALLEL_WORK_INCOMPLETE');
+   if(preflight.length)throw new DomainError('ENGINEERING_GATE_BLOCKED','Engineering reports or parallel workstreams are incomplete',409,{blockers:preflight});
+  }
   const decision=attemptTransition(mapped,{to,actor:actor.actor,channel:actor.channel,reason:input.reason,forceDone:input.forceDone},children,now());
   if(!decision.ok) throw new DomainError('TRANSITION_BLOCKED','Task transition rejected',409,{blockers:decision.blockers});
   const blockers=this.blockers(id).filter(b=>b!=='UNFINISHED_SUBTASKS' || !input.forceDone);

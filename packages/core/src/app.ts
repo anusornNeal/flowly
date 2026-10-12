@@ -2,6 +2,8 @@ import type { Actor, BrowserStep, PreviewRevision, QaCase, ScreenSpec, Screensho
 import { DomainError } from './models.js';
 import { LocalStore } from '../../db/src/store.js';
 import { Tasks } from './tasks.js';
+import { Engineering } from './engineering.js';
+import { inspectGitCommit } from './gitEvidence.js';
 import { Previews } from './previews.js';
 import { Images } from './images.js';
 import { BrowserRecorder } from '../../capture/src/recorder.js';
@@ -9,10 +11,11 @@ import { runTaskBatch } from './taskBatch.js';
 import { compareImage, inspectRendered, renderApproved, targetScreen } from '../../capture/src/renderer.js';
 
 export class FlowlyApp {
- readonly store:LocalStore;readonly tasks:Tasks;readonly previews:Previews;readonly images:Images;readonly recorder:BrowserRecorder;
+ readonly store:LocalStore;readonly tasks:Tasks;readonly engineering:Engineering;readonly previews:Previews;readonly images:Images;readonly recorder:BrowserRecorder;
  constructor(root?:string){
   this.store=new LocalStore(root);
   this.tasks=new Tasks(this.store);
+  this.engineering=new Engineering(this.store);
   this.previews=new Previews(this.store,this.tasks);
   this.images=new Images(this.store,this.tasks,this.previews);
   this.recorder=new BrowserRecorder(this.store,this.tasks,this.images);
@@ -54,7 +57,8 @@ const OPERATIONS=[
  'project.list','project.create','project.update','project.get',
  'task.list','task.create','task.get','task.detail','task.context','task.batch','task.update','task.transition','task.tests',
  'task.checklist','task.subtask','task.review','task.bugs','task.bug.create','task.bug.resolve','task.post-done-bug',
- 'task.history','task.blockers',
+ 'task.history','task.blockers','engineering.size','engineering.decision.report','engineering.decision.resolve',
+ 'engineering.implementation.report','engineering.git.inspect','engineering.parallel.plan','engineering.parallel.next','engineering.parallel.status',
  'preview.list','preview.create','preview.get','preview.draft','preview.context','preview.context.refresh',
  'preview.revision.save','preview.revision.get','preview.approve','preview.quality',
  'qa.list','qa.get','qa.required','qa.verdict','qa.waiver.cancel',
@@ -102,6 +106,14 @@ export async function execute(app:FlowlyApp,op:string,data:Record<string,any>,ac
   case 'task.post-done-bug':return t.linkedPostDoneBug(String(data.id),data as Parameters<typeof t.linkedPostDoneBug>[1],actor);
   case 'task.history':return t.activity(String(data.projectId),data.id?String(data.id):undefined);
   case 'task.blockers':return t.blockers(String(data.id));
+  case 'engineering.size':return app.engineering.updateSize(String(data.id),data.size,actor);
+  case 'engineering.decision.report':return app.engineering.writeDecision(String(data.id),data.report,actor);
+  case 'engineering.decision.resolve':return app.engineering.resolveDecision(String(data.id),data.verdict,data.reason,data.selectedOptionId,actor);
+  case 'engineering.implementation.report':return app.engineering.writeImplementation(String(data.id),data.report,actor);
+  case 'engineering.git.inspect':return inspectGitCommit(app.store,String(data.id),String(data.commit));
+  case 'engineering.parallel.plan':return app.engineering.setPlan(String(data.id),data.workstreams,actor);
+  case 'engineering.parallel.next':return app.engineering.next(String(data.id));
+  case 'engineering.parallel.status':return app.engineering.setStreamStatus(String(data.id),data.streamId,data.status,actor,data.evidence);
   case 'preview.list':return p.list(String(data.projectId));
   case 'preview.create':return p.create(data as Parameters<typeof p.create>[0],actor);
   case 'preview.get':return p.get(String(data.id));
