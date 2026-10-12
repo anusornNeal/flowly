@@ -60,6 +60,29 @@ test('risk review, embedded Bug deduplication and reject -> fix -> re-review',as
  await fixture(async app=>{
   const p=app.tasks.createProject({name:'Review'},cli);
   const task=app.tasks.createTask({projectId:p.id,title:'Public contract',risk:{publicContract:true}},cli);
+  app.engineering.writeDecision(task.id,{
+   requirements:'Review public contract change',currentArchitecture:'Existing task contract',
+   alternatives:[
+    {id:'a',title:'Inline contract',benefits:'Simple',drawbacks:'Coupled',effort:'Small'},
+    {id:'b',title:'Module contract',benefits:'Isolated',drawbacks:'Extra module',effort:'Medium'}
+   ],impacts:'Backward compatibility and review impact',recommendation:'Inline for this test'
+  },cli);
+  app.engineering.setPlan(task.id,[
+   {id:'api',title:'API',ownedPaths:['api'],dependsOn:[],status:'pending'},
+   {id:'tests',title:'Tests',ownedPaths:['tests'],dependsOn:[],status:'pending'}
+  ],cli);
+  app.engineering.resolveDecision(task.id,'approve','Explicit test decision','a',user);
+  app.tasks.transition(task.id,{to:'in-progress'},cli);
+  for(const id of ['api','tests']){
+   app.engineering.setStreamStatus(task.id,id,'in-progress',cli);
+   app.engineering.setStreamStatus(task.id,id,'done',cli,'Verified '+id);
+  }
+  app.engineering.writeImplementation(task.id,{
+   requirements:'Public contract review test',
+   changes:[{path:'api/contract',summary:'Contract reviewed'}],
+   technicalDecisions:'Keep existing review workflow',alternativesAndTradeoffs:'Approved minimal change',
+   verification:'Review regression test',deviations:'',commits:['abc1234']
+  },cli);
   app.tasks.setTests(task.id,true,'build green',cli);
   app.tasks.transition(task.id,{to:'ready-for-review'},cli);
   const first=app.tasks.review(task.id,{verdict:'reject',reason:'API contract mismatch',fingerprint:'api-123'},user);
