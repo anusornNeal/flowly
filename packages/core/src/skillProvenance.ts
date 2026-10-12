@@ -22,7 +22,7 @@ function field(value:unknown,name:string,max=128):string{
 }
 function validReason(reason:unknown):reason is SkillReason {
  return typeof reason==='string'&&['AUTHORING','SOURCE_EVIDENCE','DECOMPOSITION','IMPLEMENTATION',
-  'BOARD_LOOP','REVIEW','VISUAL_QA','VERIFICATION','BOOTSTRAP','NO_MATCH','AMBIGUOUS','BLOCKED'].includes(reason);
+  'BOARD_LOOP','REVIEW','VISUAL_QA','VERIFICATION','BOOTSTRAP','NO_MATCH','AMBIGUOUS','BLOCKED','PROJECT_GUIDANCE'].includes(reason);
 }
 const normalizeOperation=(op:string):string=>{
  const aliases:Record<string,string>={'task.transition':'transition','task.review':'review.approve',
