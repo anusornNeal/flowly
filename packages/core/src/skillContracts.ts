@@ -6,7 +6,7 @@ export type SkillSource = 'builtin' | 'project' | 'imported';
 export type SkillReason =
   | 'AUTHORING' | 'SOURCE_EVIDENCE' | 'DECOMPOSITION' | 'IMPLEMENTATION'
   | 'BOARD_LOOP' | 'REVIEW' | 'VISUAL_QA' | 'VERIFICATION'
-  | 'BOOTSTRAP' | 'NO_MATCH' | 'AMBIGUOUS' | 'BLOCKED';
+  | 'BOOTSTRAP' | 'NO_MATCH' | 'AMBIGUOUS' | 'BLOCKED' | 'PROJECT_GUIDANCE';
 export type SkillManifest = {
   id: string;
   name: string;

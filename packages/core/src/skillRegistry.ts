@@ -106,11 +106,16 @@ export class SkillRegistry {
     if (!query.projectId) throw new DomainError('SKILL_NOT_FOUND','Skill not found',404);
     requiredProject(this.store,query.projectId);
     const versions=this.storedIndex(query.projectId).filter(x=>x.id===query.id);
+    const compareVersions=(left:string,right:string):number=>{
+      const x=left.split(/[.-]/).slice(0,3).map(Number),y=right.split(/[.-]/).slice(0,3).map(Number);
+      for(let i=0;i<3;i++){if((y[i]||0)!==(x[i]||0))return (y[i]||0)-(x[i]||0);}
+      return right.localeCompare(left);
+    };
     const selected=query.version
       ? versions.find(x=>x.version===query.version)
-      : [...versions].sort((a,b)=>b.version.localeCompare(a.version))[0];
+      : [...versions].sort((a,b)=>compareVersions(a.version,b.version)).find(x=>this.stored(query.projectId!,x.id,x.version)?.manifest.enabled);
     const stored=selected && this.stored(query.projectId,selected.id,selected.version);
-    if (!stored) throw new DomainError('SKILL_NOT_FOUND','Skill revision not found',404);
+    if (!stored) throw new DomainError(query.version||versions.length===0?'SKILL_NOT_FOUND':'SKILL_NOT_ENABLED','Requested active Skill revision not found',404);
     return immutable(stored);
   }
   importProject(input: ProjectSkillInput, actor: Actor): RegisteredSkill {

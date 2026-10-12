@@ -38,3 +38,20 @@ test('repeatable deterministic ordering and bounded selections',()=>{
  assert.ok(first.selected.length<=3);
  assert.ok(first.selected.every(x=>x.sha256.length===64));
 });
+
+test('approved project guidance uses explicit opt-in and selected immutable active revision',()=>{
+ const baseline=manifests.filter(m=>m.id==='review');
+ const custom:SkillManifest={id:'custom-qa',name:'custom-qa',description:'Project custom quality checks',
+  version:'1.1.0',sha256:skillHash('active'),scope:'project',source:'project',
+  projectId:'proj_a',triggers:['custom quality'],references:[],enabled:true};
+ const old:SkillManifest={...custom,version:'1.0.0',sha256:skillHash('retired'),enabled:false};
+ const input={intent:'review custom quality',projectId:'proj_a'};
+ const no=routeSkills([...baseline,old,custom],input);
+ assert.ok(!no.selected.some(x=>x.skillId==='custom-qa'));
+ const yes=routeSkills([...baseline,old,custom],{...input,allowProjectGuidance:true});
+ assert.deepEqual(yes.selected.map(x=>x.skillId),['review','custom-qa']);
+ assert.equal(yes.selected[1]?.version,'1.1.0');
+ assert.equal(yes.selected[1]?.reason,'PROJECT_GUIDANCE');
+ const foreign=routeSkills([...baseline,custom],{...input,projectId:'proj_b',allowProjectGuidance:true});
+ assert.ok(!foreign.selected.some(x=>x.skillId==='custom-qa'));
+});

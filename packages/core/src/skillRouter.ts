@@ -75,6 +75,17 @@ export function routeSkills(manifests: readonly SkillManifest[], input: SkillRou
     selected.push({skillId:m.id,version:m.version,sha256:m.sha256,reason:c.reason});
     if(selected.length>=3)break;
   }
+  // Project-provided guidance is opt-in, least-privileged and never outranks builtin rules.
+  if(input.allowProjectGuidance===true && input.projectId && text){
+    const intent=text.toLocaleLowerCase();
+    for(const m of allowed.filter(x=>x.scope==='project'&&x.source==='project')
+      .sort((a,b)=>a.id.localeCompare(b.id)||b.version.localeCompare(a.version))){
+      if(selected.length>=3)break;
+      if(!m.triggers.some(trigger=>trigger.length>=3&&intent.includes(trigger.toLocaleLowerCase())))continue;
+      if(selected.some(x=>x.skillId===m.id))continue;
+      selected.push({skillId:m.id,version:m.version,sha256:m.sha256,reason:'PROJECT_GUIDANCE'});
+    }
+  }
   if(!selected.length){
     const fallback=allowed.find(x=>x.id==='skill-router');
     if(fallback)selected.push({skillId:fallback.id,version:fallback.version,sha256:fallback.sha256,reason:'NO_MATCH'});

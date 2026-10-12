@@ -122,7 +122,9 @@ export class SkillLearning {
     if(current.manifest.sha256!==proposal.baseSha256)
      throw new DomainError('STALE_LEARNING_BASE','Another Skill revision superseded the proposal',409);
     this.registry.importProject({projectId:input.projectId,version:proposal.candidateVersion,
-      content:proposal.candidateContent},actor);
+      content:proposal.candidateContent,triggers:current.manifest.triggers},actor);
+    this.registry.setEnabled({projectId:input.projectId,id:proposal.skillId,
+      version:proposal.baseVersion,enabled:false},actor);
    }
    const next={...proposal,status:(input.verdict==='approve'?'approved':'rejected') as SkillProposal['status'],
     decidedBy:actor.actor,decidedAt:iso(),decisionReason:input.reason.trim()};

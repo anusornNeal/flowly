@@ -36,6 +36,8 @@ test('separate reviewer must confirm exact candidate hash before import',()=>fix
  assert.throws(()=>learning.decide({...args,confirm:'APPLY:wrong'},reviewer),{code:'CONFIRM_CANDIDATE_HASH'});
  const approved=learning.decide({...args,confirm:'APPLY:'+p.candidateSha256.slice(0,12)},reviewer);
  assert.equal(approved.status,'approved');
+ assert.equal(app.skills.get({projectId,id:'custom-safety'}).manifest.version,'1.1.0');
+ assert.equal(app.skills.get({projectId,id:'custom-safety',version:'1.0.0'}).manifest.enabled,false);
  assert.equal(app.skills.get({projectId,id:'custom-safety',version:'1.1.0'}).content,revised);
  assert.throws(()=>learning.decide({...args,confirm:'APPLY:'+p.candidateSha256.slice(0,12)},reviewer),{code:'PROPOSAL_ALREADY_DECIDED'});
 }));
@@ -50,6 +52,7 @@ test('explicit rollback disables newly imported version without deleting base re
  assert.equal(rolled.status,'rolled-back');
  assert.equal(app.skills.get({projectId,id:'custom-safety',version:'1.1.0'}).manifest.enabled,false);
  assert.equal(app.skills.get({projectId,id:'custom-safety',version:'1.0.0'}).manifest.enabled,true);
+ assert.equal(app.skills.get({projectId,id:'custom-safety'}).manifest.version,'1.0.0');
  assert.equal(learning.list(projectId).length,0);
  assert.equal(learning.list(projectId,true)[0]?.status,'rolled-back');
 }));
