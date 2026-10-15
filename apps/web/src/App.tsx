@@ -7,9 +7,9 @@ import { type Detail, type Snapshot, get, op, upload, dateLabel, fileUrl, baseli
 import { previewDocument } from './previewDocument.js';
 import EngineeringPanel from './EngineeringPanel.js';
 import SkillAdmin from './SkillAdmin.js';
+import TaskMarkdown from './TaskMarkdown.js';
 
-type Page='overview'|'board'|'task'|'preview'|'skills'|'settings';
-type Tab='summary'|'decision'|'implementation'|'parallel'|'checklist'|'subtasks'|'bugs'|'qa'|'history';
+type Page='overview'|'board'|'preview'|'skills'|'settings';
 const lanes=['backlog','todo','in-progress','ready-for-review','done'] as const;
 const laneNames:Record<string,string>={'backlog':'Backlog','todo':'To-do','in-progress':'In progress','ready-for-review':'Ready for review','done':'Done'};
 const humanStatus=(v:string)=>laneNames[v]||v.replaceAll('-',' ');
@@ -17,7 +17,7 @@ const dateTime=(v?:string)=>dateLabel(v);
 const amount=(v:number)=>v>=1048576?(v/1048576).toFixed(1)+' MB':(v/1024).toFixed(1)+' KB';
 const safeJson=(text:string,label:string):any=>{try{return JSON.parse(text);}catch{throw new Error('Invalid JSON: '+label);}};
 const defaultScreen=():ScreenSpec=>({id:'screen-'+Math.random().toString(36).slice(2,7),name:'New screen',stateId:'default',viewport:{width:1280,height:800,device:'desktop'},required:true});
-const navList:[Page,typeof Grid2X2][]=[['overview',Grid2X2],['board',FolderKanban],['task',ListChecks],['preview',FileImage],['skills',WandSparkles],['settings',Settings]];
+const navList:[Page,typeof Grid2X2][]=[['overview',Grid2X2],['board',FolderKanban],['preview',FileImage],['skills',WandSparkles]];
 function Pill({children,tone='neutral'}:{children:React.ReactNode;tone?:string}){return <span className={'pill pill-'+tone}>{children}</span>;}
 function Empty({title,body}:{title:string;body?:string}){return <div className="empty"><CircleDashed size={24}/><strong>{title}</strong>{body&&<p>{body}</p>}</div>;}
 function Stamp({value}:{value?:string}){return <time>{dateTime(value)}</time>;}
@@ -29,7 +29,8 @@ export default function App(){
  const [selectedTask,setSelectedTask]=useState<string>('');
  const [selectedPreview,setSelectedPreview]=useState<string>('');
  const [detail,setDetail]=useState<Detail|null>(null);
- const [tab,setTab]=useState<Tab>('summary');
+ const [editingTask,setEditingTask]=useState(false);
+ const [inspectorFullscreen,setInspectorFullscreen]=useState(false);
  const [search,setSearch]=useState('');
  const [busy,setBusy]=useState(false);
  const [notice,setNotice]=useState<{text:string;error:boolean}|null>(null);
@@ -48,6 +49,10 @@ export default function App(){
  const [previewName,setPreviewName]=useState('');
  const [previewResetKey,setPreviewResetKey]=useState(0);
  const [previewExpanded,setPreviewExpanded]=useState(false);
+ const taskDialogRef=useRef<HTMLElement|null>(null);
+ const taskReturnFocusRef=useRef<HTMLElement|null>(null);
+ const taskRequestRef=useRef(0);
+ const currentTaskIdRef=useRef('');
  const previewFrame=useRef<HTMLIFrameElement|null>(null);
  const [previewTaskId,setPreviewTaskId]=useState('');
  const [draft,setDraft]=useState<Preview['draft']|null>(null);
@@ -85,6 +90,9 @@ export default function App(){
  const selectedBug=visibleBugs.find(b=>b.id===selectedBugId)||visibleBugs[0];
  const counts=Object.fromEntries(lanes.map(lane=>[lane,tasks.filter(t=>t.status===lane).length]));
  const filteredTasks=tasks.filter(t=>(t.title+' '+t.displayId+' '+t.description).toLowerCase().includes(search.toLowerCase()));
+ const orderedTasks=lanes.flatMap(lane=>filteredTasks.filter(task=>task.status===lane));
+ const taskPosition=orderedTasks.findIndex(task=>task.id===selectedTask);
+ const hasUnsavedTaskEdits=Boolean(activeTask&&editingTask&&(['title','description','acceptanceCriteria','verificationStep'] as const).some(field=>taskEdit[field]!==activeTask[field]));
  const currentSnapshot=useCallback(async(id:string)=>{
   const d=await get<Snapshot>('snapshot/'+encodeURIComponent(id));
   setSnapshot(d);
@@ -100,7 +108,9 @@ export default function App(){
  },[projectId,currentSnapshot]);
  const loadDetail=useCallback(async(id:string)=>{
   if(!id)return;
+  const requestId=++taskRequestRef.current;
   const d=await get<Detail>('tasks/'+encodeURIComponent(id));
+  if(requestId!==taskRequestRef.current||currentTaskIdRef.current!==id)return;
   setDetail(d);
   setTaskEdit({title:d.task.title,description:d.task.description,acceptanceCriteria:d.task.acceptanceCriteria,verificationStep:d.task.verificationStep});
  },[]);
@@ -108,6 +118,7 @@ export default function App(){
  useEffect(()=>{
   if(!projectId)return;
   localStorage.setItem('flowly-project',projectId);
+  taskRequestRef.current++;currentTaskIdRef.current='';setEditingTask(false);
   setSelectedTask('');setSelectedPreview('');setSelectedCase('');setDetail(null);
   refresh().catch(e=>setNotice({text:String(e),error:true}));
   const timer=setInterval(()=>{if(document.visibilityState==='visible')void refresh().catch(()=>{});},6000);
@@ -131,13 +142,43 @@ export default function App(){
   try{
    const response=await op<T>(operation,body);
    await refresh();
-   if(selectedTask)await loadDetail(selectedTask);
+   if(currentTaskIdRef.current)await loadDetail(currentTaskIdRef.current);
    notify('Saved successfully');return response;
   }catch(error){notify(error instanceof Error?error.message:String(error),true);}
   finally{setBusy(false);}
  };
- const chooseTask=(id:string)=>{setSelectedTask(id);setPage('task');setTab('summary');setSelectedBugId('');setBugFilter('open');};
- const choosePreview=(id:string)=>{setSelectedPreview(id);setPage('preview');setSelectedCase('');setPreviewExpanded(false);};
+ const closeTask=():boolean=>{
+  if(hasUnsavedTaskEdits&&!window.confirm('Discard unsaved task changes?'))return false;
+  taskRequestRef.current++;currentTaskIdRef.current='';
+  setSelectedTask('');setDetail(null);setEditingTask(false);setInspectorFullscreen(false);
+  requestAnimationFrame(()=>taskReturnFocusRef.current?.focus());
+  return true;
+ };
+ const chooseTask=(id:string)=>{
+  if(id===selectedTask)return;
+  if(hasUnsavedTaskEdits&&!window.confirm('Discard unsaved task changes?'))return;
+  if(!selectedTask)taskReturnFocusRef.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
+  taskRequestRef.current++;currentTaskIdRef.current=id;
+  setSelectedTask(id);setDetail(null);setEditingTask(false);setSelectedBugId('');setBugFilter('open');
+ };
+ const choosePreview=(id:string)=>{
+  if(selectedTask&&!closeTask())return;
+  setSelectedPreview(id);setPage('preview');setSelectedCase('');setPreviewExpanded(false);
+ };
+ useEffect(()=>{
+  if(!selectedTask)return;
+  const oldOverflow=document.body.style.overflow;
+  document.body.style.overflow='hidden';
+  taskDialogRef.current?.focus();
+  return ()=>{document.body.style.overflow=oldOverflow;};
+ },[Boolean(selectedTask)]);
+ useEffect(()=>{
+  if(!selectedTask)return;
+  const keyHandler=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();closeTask();}};
+  window.addEventListener('keydown',keyHandler);
+  return ()=>window.removeEventListener('keydown',keyHandler);
+ },[selectedTask,hasUnsavedTaskEdits]);
+
  const createProject=async(e:FormEvent)=>{
   e.preventDefault();setBusy(true);
   try{
@@ -205,7 +246,7 @@ export default function App(){
  },[screenIndex,selectedPreview]);
  const screens=draft?.screens||[];
  const visibleScreenshots=deletedShown?historyImages.filter(s=>s.status==='deleted'):(snapshot?.screenshots||[]);
- const menuName:Record<Page,string>={overview:'Overview',board:'Task Board',task:'Task Detail',preview:'Preview & Visual QA',skills:'Skill Engine',settings:'Settings'};
+ const menuName:Record<Page,string>={overview:'Overview',board:'Task Board',preview:'Preview & Visual QA',skills:'Skill Engine',settings:'Settings'};
  return <div className="flowly-app">
   <aside className="sidebar">
    <div className="brand"><div className="brand-mark"><span/><span/><span/><span/></div><strong>flowly</strong></div>
@@ -216,7 +257,7 @@ export default function App(){
     </select></span><ChevronDown size={15}/></label>
    <span className="nav-eyebrow">WORKSPACE</span>
    <nav className="nav-list" aria-label="Main navigation">
-    {navList.slice(0,5).map(([key,Icon])=><button key={key} type="button" className={'nav-btn'+(page===key?' is-active':'')} onClick={()=>setPage(key)}>
+    {navList.map(([key,Icon])=><button key={key} type="button" className={'nav-btn'+(page===key?' is-active':'')} onClick={()=>setPage(key)}>
      <Icon size={18}/><span>{menuName[key]}</span>{key==='board'&&<em>{tasks.length}</em>}
     </button>)}
    </nav>
@@ -295,21 +336,50 @@ export default function App(){
        </div></button>)}{filteredTasks.filter(t=>t.status===lane).length===0&&<div className="lane-empty">No tasks</div>}</div>
      </section>)}</div></div>
     </>}
-    {page==='task'&&<>{!activeTask?<Empty title="Choose a task" body="Select a card from the Board to inspect its activity and workflow."/>:<>
-     <header className="page-heading task-heading"><div><button className="text-button" onClick={()=>setPage('board')}><ArrowLeft size={15}/> Back to Board</button>
-      <div className="eyebrow">{activeTask.displayId} / {activeTask.type.toUpperCase()}</div><h1>{activeTask.title}</h1>
-      <p>Last updated <Stamp value={activeTask.updatedAt}/></p></div>
-      <div className="action-cluster"><Pill tone={activeTask.status==='done'?'green':'blue'}>{humanStatus(activeTask.status)}</Pill>
-       {activeTask.status!=='done'&&<select aria-label="Change lane" value={activeTask.status} onChange={e=>statusSelect(activeTask.id,e.target.value)}>
-        {lanes.map(l=><option value={l} key={l}>{humanStatus(l)}</option>)}</select>}</div></header>
-     <div className="detail-tabs">{(['summary','decision','parallel','implementation','checklist','subtasks','bugs','qa','history'] as Tab[]).map(t=><button key={t} className={t===tab?'active':''} onClick={()=>setTab(t)}>{humanStatus(t)}
-     {t==='bugs'&&!!detail?.bugs.length&&<span>{detail.bugs.length}</span>}</button>)}</div>
-     {tab==='summary'&&<div className="detail-grid"><section className="panel padded"><div className="mini-eyebrow">TASK INFORMATION</div><h2>Scope and acceptance</h2>
-      <label>Title<input value={taskEdit.title} disabled={activeTask.status==='done'} onChange={e=>setTaskEdit({...taskEdit,title:e.target.value})}/></label>
-      <label>Description<textarea rows={4} value={taskEdit.description} disabled={activeTask.status==='done'} onChange={e=>setTaskEdit({...taskEdit,description:e.target.value})}/></label>
-      <label>Acceptance criteria<textarea rows={3} value={taskEdit.acceptanceCriteria} disabled={activeTask.status==='done'} onChange={e=>setTaskEdit({...taskEdit,acceptanceCriteria:e.target.value})}/></label>
-      <label>Verification step<textarea rows={2} value={taskEdit.verificationStep} disabled={activeTask.status==='done'} onChange={e=>setTaskEdit({...taskEdit,verificationStep:e.target.value})}/></label>
-      {activeTask.status!=='done'&&<button className="primary-button" disabled={busy} onClick={()=>void doAction('task.update',{id:activeTask.id,...taskEdit})}><Save size={15}/> Save task</button>}</section>
+    {selectedTask&&<div className="task-inspector-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)closeTask();}}>
+     <section ref={taskDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={activeTask?'task-inspector-title':undefined}
+      className={'task-inspector panel'+(inspectorFullscreen?' is-fullscreen':'')}
+      onKeyDown={e=>{
+       if(e.key!=='Tab')return;
+       const focusables=Array.from(e.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),textarea:not(:disabled),select:not(:disabled),summary'))
+        .filter(element=>element.getClientRects().length>0);
+       if(!focusables.length)return;
+       if(e.shiftKey&&document.activeElement===focusables[0]){e.preventDefault();focusables[focusables.length-1]!.focus();}
+       else if(!e.shiftKey&&document.activeElement===focusables[focusables.length-1]){e.preventDefault();focusables[0]!.focus();}
+      }}>
+      {!activeTask?<div className="task-loading">Loading task details…</div>:<>
+       <header className="task-inspector-header">
+        <div className="task-inspector-title">
+         <div className="task-inspector-meta"><span className="task-id">{activeTask.displayId}</span><Pill tone={activeTask.status==='done'?'green':'blue'}>{humanStatus(activeTask.status)}</Pill><Pill>{activeTask.type}</Pill></div>
+         <h2 id="task-inspector-title">{activeTask.title}</h2>
+         <small>Updated <Stamp value={activeTask.updatedAt}/></small>
+        </div>
+        <div className="task-inspector-actions">
+         {activeTask.status!=='done'&&<select aria-label="Change task lane" value={activeTask.status} disabled={busy} onChange={e=>statusSelect(activeTask.id,e.target.value)}>
+          {lanes.map(lane=><option value={lane} key={lane}>{humanStatus(lane)}</option>)}</select>}
+         {!editingTask&&activeTask.status!=='done'&&<button className="outline-button" onClick={()=>setEditingTask(true)}>Edit</button>}
+         <div className="task-pager" aria-label="Browse tasks">
+          <button className="icon-button" aria-label="Previous task" title="Previous task" disabled={taskPosition<=0} onClick={()=>chooseTask(orderedTasks[taskPosition-1]!.id)}><ArrowLeft size={16}/></button>
+          <span>{taskPosition>=0?taskPosition+1:0} / {orderedTasks.length}</span>
+          <button className="icon-button" aria-label="Next task" title="Next task" disabled={taskPosition<0||taskPosition===orderedTasks.length-1} onClick={()=>chooseTask(orderedTasks[taskPosition+1]!.id)}><ArrowRight size={16}/></button>
+         </div>
+         <button className="icon-button" title={inspectorFullscreen?'Exit fullscreen':'Expand inspector'} aria-label={inspectorFullscreen?'Exit fullscreen':'Expand inspector'} onClick={()=>setInspectorFullscreen(value=>!value)}>{inspectorFullscreen?<Minimize2 size={17}/>:<Maximize2 size={17}/>}</button>
+         <button className="icon-button" title="Close task details" aria-label="Close task details" onClick={closeTask}><X size={19}/></button>
+        </div>
+       </header>
+       <div className="task-inspector-scroll">
+     <div className="detail-grid"><section className="panel padded"><div className="mini-eyebrow">TASK INFORMATION</div><h2>Scope and acceptance</h2>
+      {editingTask?<div className="task-editor">
+       <label>Title<input value={taskEdit.title} onChange={e=>setTaskEdit({...taskEdit,title:e.target.value})}/></label>
+       <label>Description (Markdown)<textarea className="task-description-editor" rows={12} value={taskEdit.description} onChange={e=>setTaskEdit({...taskEdit,description:e.target.value})}/></label>
+       <label>Acceptance criteria (Markdown)<textarea rows={6} value={taskEdit.acceptanceCriteria} onChange={e=>setTaskEdit({...taskEdit,acceptanceCriteria:e.target.value})}/></label>
+       <label>Verification steps (Markdown)<textarea rows={5} value={taskEdit.verificationStep} onChange={e=>setTaskEdit({...taskEdit,verificationStep:e.target.value})}/></label>
+      </div>:<div className="task-read-fields">
+       <div className="task-read-section task-description"><h3>Description</h3><TaskMarkdown content={activeTask.description} emptyMessage="No description yet."/></div>
+       {activeTask.acceptanceCriteria&&<div className="task-read-section"><h3>Acceptance criteria</h3><TaskMarkdown content={activeTask.acceptanceCriteria}/></div>}
+       {activeTask.verificationStep&&<div className="task-read-section"><h3>Verification steps</h3><TaskMarkdown content={activeTask.verificationStep}/></div>}
+      </div>}
+</section>
       <section className="detail-stack">
        <div className="panel padded"><div className="mini-eyebrow">QUALITY GATES</div><h2>Done readiness</h2>
         {detail?.blockers.length?detail.blockers.map(block=><div className="blocker" key={block}><AlertCircle size={14}/>{humanStatus(block.replaceAll('_',' ').toLowerCase())}</div>):
@@ -331,9 +401,13 @@ export default function App(){
         {previews.filter(p=>p.taskId===activeTask.id).map(p=><button className="link-row" key={p.id} onClick={()=>choosePreview(p.id)}><Monitor size={15}/>{p.name}<ArrowRight size={14}/></button>)}
         {!previews.some(p=>p.taskId===activeTask.id)&&<p className="muted">No preview linked yet.</p>}
        </div>
-      </section></div>}
-     {(['decision','implementation','parallel'] as const).includes(tab as 'decision'|'implementation'|'parallel')&&<EngineeringPanel key={activeTask.id+'-'+tab} task={activeTask} mode={tab as 'decision'|'implementation'|'parallel'} onAction={(name,body)=>doAction(name,body)} busy={busy}/>}
-     {tab==='checklist'&&<section className="panel padded"><div className="section-row"><div><div className="mini-eyebrow">LIGHTWEIGHT STEPS</div><h2>Checklist</h2></div>
+      </section></div>     <div className="task-secondary-sections">
+      {(['decision','parallel','implementation'] as const).map(mode=><details className="task-disclosure" key={mode}>
+       <summary>{mode==='decision'?'Alternatives & decision':mode==='parallel'?'Parallel workstreams':'Implementation report'} <ChevronDown size={16}/></summary>
+       <EngineeringPanel key={activeTask.id+'-'+mode} task={activeTask} mode={mode} onAction={(name,body)=>doAction(name,body)} busy={busy}/>
+      </details>)}
+     </div>
+     <details className="task-disclosure" open><summary>Checklist <ChevronDown size={16}/></summary><section className="panel padded"><div className="section-row"><div><div className="mini-eyebrow">LIGHTWEIGHT STEPS</div><h2>Checklist</h2></div>
       <Pill tone="blue">{activeTask.checklist.filter(c=>c.done).length} / {activeTask.checklist.length}</Pill></div>
       {activeTask.checklist.map((item,index)=><div className="checklist-row" key={item.id}><input aria-label={'Complete '+item.text} type="checkbox" checked={item.done} disabled={activeTask.status==='done'}
        onChange={e=>void doAction('task.checklist',{id:activeTask.id,action:'toggle',itemId:item.id,done:e.target.checked})}/>
@@ -343,14 +417,14 @@ export default function App(){
        <button title="Remove" onClick={()=>void doAction('task.checklist',{id:activeTask.id,action:'remove',itemId:item.id})}><X size={14}/></button></>}</div>)}
       {activeTask.status!=='done'&&<form className="row-form" onSubmit={e=>{e.preventDefault();void doAction('task.checklist',{id:activeTask.id,action:'add',text:checkText}).then(()=>setCheckText(''));}}>
        <input placeholder="Add checklist step" required value={checkText} onChange={e=>setCheckText(e.target.value)}/><button className="primary-button" disabled={busy}><Plus size={14}/> Add</button></form>}
-     </section>}
-     {tab==='subtasks'&&<section className="panel padded"><div className="mini-eyebrow">CHILD TASKS</div><h2>Subtasks</h2>
+     </section></details>
+     <details className="task-disclosure"><summary>Subtasks <ChevronDown size={16}/></summary><section className="panel padded"><div className="mini-eyebrow">CHILD TASKS</div><h2>Subtasks</h2>
       {(detail?.children||[]).map(t=><button className="link-row" key={t.id} onClick={()=>chooseTask(t.id)}><span>{t.displayId}</span><strong>{t.title}</strong><Pill>{humanStatus(t.status)}</Pill><ArrowRight size={14}/></button>)}
       {!detail?.children.length&&<Empty title="No subtasks" body="Subtasks have independent workflow and completion gates."/>}
       {activeTask.status!=='done'&&!activeTask.parentId&&<form className="row-form" onSubmit={e=>{e.preventDefault();void doAction('task.subtask',{projectId,parentId:activeTask.id,title:taskTitle}).then(()=>setTaskTitle(''));}}>
        <input required placeholder="New subtask" value={taskTitle} onChange={e=>setTaskTitle(e.target.value)}/><button className="primary-button"><Plus size={15}/> Add</button></form>}
-     </section>}
-     {tab==='bugs'&&<section className="panel padded"><div className="section-row"><div className="mini-eyebrow">DEFECT TRACKING</div>
+     </section></details>
+     <details className="task-disclosure"><summary>Bug threads <ChevronDown size={16}/></summary><section className="panel padded"><div className="section-row"><div className="mini-eyebrow">DEFECT TRACKING</div>
       <Pill tone={detail?.bugs.some(b=>b.status==='open')?'red':'green'}>{detail?.bugs.filter(b=>b.status==='open').length||0} unresolved</Pill></div>
       <h2>Bug threads</h2>
       <div className="segmented" role="group" aria-label="Filter bug threads">
@@ -367,7 +441,7 @@ export default function App(){
        {selectedBug.occurrences.map((finding,index)=><div key={finding.timestamp+'-'+index} className="bug-finding">
         <small>{dateTime(finding.timestamp)} · {finding.actor} via {finding.channel}</small><p>{finding.detail}</p>
         {finding.evidenceId&&<small>Screenshot evidence: {finding.evidenceId}</small>}
-        {finding.caseId&&<button type="button" className="text-button" onClick={()=>{setSelectedCase(finding.caseId!);setPage('preview');}}>
+        {finding.caseId&&<button type="button" className="text-button" onClick={()=>{if(closeTask()){setSelectedCase(finding.caseId!);setPage('preview');}}}>
          Inspect QA case {finding.caseId} <ArrowRight size={13}/></button>}
        </div>)}</div>}
       {activeTask.status==='done'?<div className="post-done"><p>Completed tasks cannot be reopened. New defects become independent linked Bug tasks in Backlog.</p>
@@ -377,14 +451,23 @@ export default function App(){
        <div className="row-form"><input placeholder="New bug finding" value={bugText} onChange={e=>setBugText(e.target.value)}/>
         <button className="outline-button" onClick={()=>void doAction('task.bug.create',{id:activeTask.id,origin:'manual',fingerprint:bugText,title:bugText,description:taskReason||bugText})}>Log bug</button></div>}
       <label>Reason / resolution evidence<input placeholder="Reason or verification evidence" value={taskReason} onChange={e=>setTaskReason(e.target.value)}/></label>
-     </section>}
-     {tab==='qa'&&<section className="panel padded"><div className="mini-eyebrow">VISUAL COMPARISON</div><h2>Current QA cases</h2>
+     </section></details>
+     <details className="task-disclosure"><summary>Visual QA cases <ChevronDown size={16}/></summary><section className="panel padded"><div className="mini-eyebrow">VISUAL COMPARISON</div><h2>Current QA cases</h2>
       {taskCases.map(c=><CaseRow key={c.id} qa={c} evidence={snapshot?.screenshots.find(s=>s.id===c.evidenceId)}
-       onInspect={()=>{setSelectedCase(c.id);setPage('preview');}}
+       onInspect={()=>{if(closeTask()){setSelectedCase(c.id);setPage('preview');}}}
        onUpload={e=>void uploadCase(e,c)} onRequired={required=>void doAction('qa.required',{id:c.id,required})}/>)}
-      {!taskCases.length&&<Empty title="No QA cases" body="Approve a Preview with explicit screen/state/viewport tuples."/>}</section>}
-     {tab==='history'&&<section className="panel padded"><div className="mini-eyebrow">IMMUTABLE EVENTS</div><h2>Task history</h2><ActivityList items={detail?.history||[]}/></section>}
-    </>}</>}
+      {!taskCases.length&&<Empty title="No QA cases" body="Approve a Preview with explicit screen/state/viewport tuples."/>}</section></details>
+     <details className="task-disclosure"><summary>Activity history <ChevronDown size={16}/></summary><section className="panel padded"><div className="mini-eyebrow">IMMUTABLE EVENTS</div><h2>Task history</h2><ActivityList items={detail?.history||[]}/></section></details>
+       </div>
+       {editingTask&&<footer className="task-inspector-footer"><span>Markdown edits are saved only when you confirm.</span>
+        <div className="action-wrap">
+         <button className="outline-button" onClick={()=>{setEditingTask(false);setTaskEdit({title:activeTask.title,description:activeTask.description,acceptanceCriteria:activeTask.acceptanceCriteria,verificationStep:activeTask.verificationStep});}}>Cancel</button>
+         <button className="primary-button" disabled={busy||!taskEdit.title.trim()} onClick={async()=>{const saved=await doAction('task.update',{id:activeTask.id,...taskEdit});if(saved)setEditingTask(false);}}><Save size={15}/> Save changes</button>
+        </div>
+       </footer>}
+      </>}
+     </section>
+    </div>}
     {page==='preview'&&<>
      <header className="page-heading"><div><div className="eyebrow">DESIGN TO QUALITY</div><h1>Preview &amp; Visual QA<span className="dot">.</span></h1><p>Editable interactive source, immutable approval and evidence-backed verdicts.</p></div></header>
      <div className="preview-selector"><select aria-label="Select Preview" value={selectedPreview} onChange={e=>choosePreview(e.target.value)}>
