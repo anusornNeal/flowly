@@ -44,8 +44,51 @@ test('a small ready task provides transition then real test evidence hint',()=>f
  assert.equal(x.reason,'TEST_EVIDENCE_REQUIRED');
  assert.equal(x.operation,'task.tests');
  app.tasks.setTests(t.id,true,'Tested real local change',actor);
+ assert.equal(getNextAction(app,{projectId:p.id,taskId:t.id}).reason,'READY_FOR_REVIEW');
+ app.tasks.transition(t.id,{to:'ready-for-review'},actor);
  assert.equal(getNextAction(app,{projectId:p.id,taskId:t.id}).reason,'READY_TO_DONE');
 }));
+test('pending visual QA and QA checklist do not strand completed implementation in progress',()=>fixture(app=>{
+ const p=app.tasks.createProject({name:'Visual review handoff'},actor);
+ const t=app.tasks.createTask({projectId:p.id,title:'Screen with device QA pending',
+  risk:{localScope:true,reversible:true,expectedOutcome:true,acceptanceCriteria:true,verificationStep:true}},actor);
+ app.tasks.transition(t.id,{to:'in-progress'},actor);
+ app.tasks.checklist(t.id,'add',{text:'Run Figma Visual QA and capture device screenshot'},actor);
+ const preview=app.previews.create({projectId:p.id,taskId:t.id,name:'Device screen',
+  html:'<main>Screen</main>',screens:[{id:'main',name:'Main',stateId:'default',
+   viewport:{device:'mobile',width:390,height:844},required:true}]},actor);
+ const revision=app.previews.saveRevision(preview.id,actor);
+ app.store.put('preview',{...preview,revisionIds:[revision.id],approvedRevisionId:revision.id});
+ app.store.put('qa',{id:'qa_pending',projectId:p.id,taskId:t.id,previewId:preview.id,
+  revisionId:revision.id,screenId:'main',stateId:'default',viewport:{device:'mobile',width:390,height:844},
+  required:true,updatedAt:'2026-10-16T00:00:00.000Z'});
+ assert.equal(getNextAction(app,{projectId:p.id,taskId:t.id}).reason,'TEST_EVIDENCE_REQUIRED');
+ app.tasks.setTests(t.id,true,'Kotlin compile and unit tests passed',actor);
+ const before=app.tasks.activity(p.id,t.id).length;
+ const advice=getNextAction(app,{projectId:p.id,taskId:t.id});
+ assert.equal(advice.reason,'READY_FOR_REVIEW');
+ assert.equal(advice.params.to,'ready-for-review');
+ assert.ok(advice.blockers.includes('REQUIRED_QA_INCOMPLETE'));
+ assert.ok(advice.blockers.includes('CHECKLIST_INCOMPLETE'));
+ assert.equal(app.tasks.activity(p.id,t.id).length,before,'recommendation must not move task');
+ app.tasks.transition(t.id,{to:'ready-for-review'},actor);
+ assert.equal(getNextAction(app,{projectId:p.id,taskId:t.id}).reason,'QA_EVIDENCE_REQUIRED');
+ assert.throws(()=>app.tasks.transition(t.id,{to:'done'},actor),
+  {code:'TRANSITION_BLOCKED'});
+ assert.equal(app.tasks.task(t.id).status,'ready-for-review');
+}));
+
+test('small skip-review still passes through Ready for Review before suggested Done',()=>fixture(app=>{
+ const p=app.tasks.createProject({name:'Small skip'},actor);
+ const t=app.tasks.createTask({projectId:p.id,title:'Minor fix',reviewMode:'skip-review',
+  risk:{localScope:true,reversible:true,expectedOutcome:true,acceptanceCriteria:true,verificationStep:true}},actor);
+ app.tasks.transition(t.id,{to:'in-progress'},actor);
+ app.tasks.setTests(t.id,true,'Focused checks green',actor);
+ assert.equal(getNextAction(app,{projectId:p.id,taskId:t.id}).reason,'READY_FOR_REVIEW');
+ app.tasks.transition(t.id,{to:'ready-for-review'},actor);
+ assert.equal(getNextAction(app,{projectId:p.id,taskId:t.id}).reason,'READY_TO_DONE');
+}));
+
 test('multiple cards return bounded candidates without implicit choice',()=>fixture(app=>{
  const p=app.tasks.createProject({name:'Multiple'},actor);
  app.tasks.createTask({projectId:p.id,title:'One'},actor);

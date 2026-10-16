@@ -285,7 +285,7 @@ export default function App(){
      {project?<><section className="stat-grid">
       {([['Tasks',tasks.filter(t=>t.status!=='done').length,'5 workflow lanes',FolderKanban],
         ['In progress',counts['in-progress']||0,'Work currently active',Activity],
-        ['Ready for review',counts['ready-for-review']||0,'Waiting on a decision',Bell],
+        ['Ready for review',counts['ready-for-review']||0,'Awaiting review or QA',Bell],
         ['QA Passed',cases.filter(c=>c.verdict==='PASS').length,'of '+cases.length+' current cases',ShieldCheck]
        ] as const).map(([title,count,sub,Icon])=><button className="stat-card" key={String(title)} onClick={()=>setPage(title==='QA Passed'?'preview':'board')}>
        <div><span>{String(title)}</span><Icon size={20}/></div><strong>{String(count).padStart(2,'0')}</strong><small>{String(sub)}</small></button>)}
@@ -390,7 +390,11 @@ export default function App(){
         {activeTask.status!=='done'&&<><label>Verification evidence<input placeholder="Test command / evidence reference" value={proof} onChange={e=>setProof(e.target.value)}/></label>
          <button className="outline-button" onClick={()=>void doAction('task.tests',{id:activeTask.id,passed:true,evidence:proof})}>Record passing tests</button>
          <label>Workflow / review reason<input value={taskReason} onChange={e=>setTaskReason(e.target.value)} placeholder="Reason for override, review rejection, or Force Done"/></label>
-         <div className="action-wrap">{activeTask.status==='ready-for-review'&&<>
+         <div className="action-wrap">{activeTask.status==='in-progress'&&
+          <button className="primary-button" onClick={()=>void doAction('task.transition',{id:activeTask.id,to:'ready-for-review'})}>
+           <CheckCircle2 size={14}/> Ready for review
+          </button>}
+          {activeTask.status==='ready-for-review'&&<>
           <button className="primary-button" onClick={()=>void doAction('task.review',{id:activeTask.id,verdict:'approve',reason:taskReason})}><Check size={14}/> Approve review</button>
           <button className="danger-outline" onClick={()=>void doAction('task.review',{id:activeTask.id,verdict:'reject',reason:taskReason})}><X size={14}/> Reject review</button></>}
           <button className="outline-button" onClick={()=>void doAction('task.transition',{id:activeTask.id,to:'done'})}>Move to Done</button>

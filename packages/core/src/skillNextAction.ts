@@ -102,8 +102,27 @@ function computeNextAction(app: FlowlyApp, input: NextActionInput = {}): NextAct
       return result(projectId,taskId,'engineering.parallel.next','WAIT_FOR_DEPENDENCIES',[],{id:taskId});
   }
   const blockers = app.tasks.blockers(taskId);
-  const openBug = blockers.includes('OPEN_BUGS');
-  if (openBug) return result(projectId,taskId,'task.bugs','OPEN_BUGS',blockers,{id:taskId});
+  if (blockers.includes('OPEN_BUGS'))
+    return result(projectId,taskId,'task.bugs','OPEN_BUGS',blockers,{id:taskId});
+
+  // Implementation handoff is different from final completion. Pending QA,
+  // review, preview approval and QA checklist items must not strand a tested
+  // implementation in In Progress. A recommendation never mutates the task.
+  if (task.status === 'in-progress') {
+    if (blockers.includes('UNFINISHED_SUBTASKS'))
+      return result(projectId,taskId,'task.context','UNFINISHED_SUBTASKS',blockers,{id:taskId});
+    if (!task.testsPassed)
+      return result(projectId,taskId,'task.tests','TEST_EVIDENCE_REQUIRED',blockers,{id:taskId},
+        ['Run applicable repository tests and provide genuine implementation verification evidence.']);
+    if (decisionRequired(task) && reportBlockers(task).length)
+      return result(projectId,taskId,'engineering.implementation.report','IMPLEMENTATION_REPORT_REQUIRED',
+        reportBlockers(task),{id:taskId},['Use verified changes, tests and commit hashes.']);
+    return result(projectId,taskId,'task.transition','READY_FOR_REVIEW',blockers,
+      {id:taskId,to:'ready-for-review'},
+      ['Implementation verified. Handoff for review; QA, approval and remaining checklist items still gate Done.']);
+  }
+
+  // Only after Ready for Review do we steer the agent toward QA and Done gates.
   if (blockers.includes('PREVIEW_APPROVAL_REQUIRED'))
     return result(projectId,taskId,'preview.list','PREVIEW_APPROVAL_REQUIRED',blockers,{projectId});
   if (blockers.includes('REQUIRED_QA_STALE') || blockers.includes('REQUIRED_QA_INCOMPLETE'))
@@ -119,13 +138,8 @@ function computeNextAction(app: FlowlyApp, input: NextActionInput = {}): NextAct
   if (decisionRequired(task) && reportBlockers(task).length)
     return result(projectId,taskId,'engineering.implementation.report','IMPLEMENTATION_REPORT_REQUIRED',
       reportBlockers(task),{id:taskId},['Use verified changes, tests and commit hashes.']);
-  if (task.status === 'ready-for-review') {
-    if (blockers.includes('REVIEW_NOT_APPROVED'))
-      return result(projectId,taskId,'task.review','EXPLICIT_REVIEW_REQUIRED',blockers,{id:taskId});
-    return result(projectId,taskId,'task.transition','READY_TO_DONE',blockers,{id:taskId,to:'done'});
-  }
-  if (task.reviewMode === 'require-review' || task.reviewMode === 'auto' && blockers.includes('REVIEW_NOT_APPROVED'))
-    return result(projectId,taskId,'task.transition','READY_FOR_REVIEW',blockers,{id:taskId,to:'ready-for-review'});
+  if (blockers.includes('REVIEW_NOT_APPROVED'))
+    return result(projectId,taskId,'task.review','EXPLICIT_REVIEW_REQUIRED',blockers,{id:taskId});
   return result(projectId,taskId,'task.transition','READY_TO_DONE',blockers,{id:taskId,to:'done'});
 }
 function jobAction(projectId: string, taskId: string | undefined, job: JobRecord): NextActionResult {

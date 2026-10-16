@@ -33,6 +33,8 @@ All projects use the [Engineering Delivery Standard](docs/ENGINEERING-STANDARD.m
 
 Attach a Preview to a Task; author interactive HTML/CSS/JS, explicitly define Screen + State + Viewport tuples, save Draft, freeze Revision and explicitly Approve. Approved revisions and their UI-context snapshots are immutable. Approval runs real Chromium rendering checks: critical layout/runtime defects block approval; advisory warnings require explicit acceptance and a reason. QA Cases are created only from explicitly approved tuples.
 
+After implementation and applicable tests are complete, move the Task explicitly to **Ready for review** even if Figma/Visual QA, device testing, human review or QA checklist entries are still pending. These are Done gates, never automatic PASS or approval. Flowly `skills.next` recommends the handoff only and cannot move cards automatically.
+
 Manual Screenshot Upload works for Web/Desktop/Mobile even when external agents are offline. The optional controlled Web Recorder runs against localhost URLs and retains Cookies and Local Storage in a separate profile per Project, including after Flowly restarts. Reset Session affects only that Project. Screenshot comparison uses original evidence and frozen Approved revision, generating diff on demand. No screenshot, capture, replay, or comparison silently decides PASS/FAIL/WAIVED.
 
 Explicit QA PASS/FAIL needs linked original screenshot evidence; WAIVED requires reason. FAIL creates Bug evidence; post-Done defects create a separate linked top-level Bug Task without reopening Done. Tests, mandatory current QA, open bugs, checklists, review and unfinished Subtasks block Done. Explicit Force Done with a nonblank reason only overrides unfinished Subtasks and preserves all child states.
