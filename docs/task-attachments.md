@@ -2,9 +2,9 @@
 
 Task attachments are requirement/reference images. They never create Screenshot,
 QA Case, comparison, inbox items, or verdicts. This contract is independent of QA
-screenshot ingestion and cleanup. The backend is implemented; frontend composer,
-gallery, lightbox, Markdown rendering, accessibility and device checks remain
-FLY-0044/FLY-0045 integration work. No decision, review or QA gate is approved by
+screenshot ingestion and cleanup. Board creation and Inspector integration now use
+the typed backend contract, composer, gallery, lightbox and safe Markdown renderer.
+No decision, review or QA gate is approved by
 this implementation or by attachment presence.
 
 ## Canonical creation protocol
@@ -226,8 +226,35 @@ Frontend must parse URLs and allow only same-origin
 verify the referenced item belongs to the current task's returned attachment list,
 disable raw HTML, and render 404/410 images as a safe accessible placeholder.
 No arbitrary local file path, data URL, SVG, remote fetch or raw HTML should be
-enabled by this feature. The API implements safe image serving; implementing the
-Markdown allowlist/rendering and testing keyboard/mobile/a11y remain frontend work.
+enabled by this feature. `taskImageUrls.ts` restricts image routes and
+`TaskMarkdown.tsx` checks membership in the current task's attachment list before
+rendering. Removed, blocked and unavailable images display accessible placeholders.
+
+## Web workflow (FLY-0044 / FLY-0040)
+
+- Board **New task**, **New bug**, and **Add images / expand** open the composer.
+  The existing text-only quick Create remains available. Parent Inspector **Work**
+  offers **New subtask** with the same composer. Done origins offer **New linked
+  bug with images** in QA & Review without reopening or parenting the origin.
+- Select, drop or paste images; edit alt text and reorder before Create. Drafts
+  stay in browser memory, object URLs are revoked, and cancelling a nonempty draft
+  asks before discarding. No server files exist before submission.
+- Multipart commits use one retained idempotency key per unchanged payload.
+  Interrupted requests retain the draft for retry; editing starts a new key.
+  Busy controls prevent duplicate submission. Progress is indeterminate while
+  the atomic request runs; per-file upload percentages are not advertised.
+- Inspector **Overview** shows gallery and add/remove actions. Removal requires
+  confirmation. Done cards retain image viewing with mutations disabled.
+  Escape closes only the top image/composer dialog and restores focus.
+- To embed an image, create the card, choose **Edit**, then **Insert [name] in
+  description** and Save changes. Atomic create returns IDs only after commit,
+  so draft Markdown insertion is intentionally unavailable. Preexisting canonical
+  references can be typed, but only current-task references render. Alt text is
+  editable before upload; the canonical API has no persisted alt-text update or
+  reorder operation, so those controls are not offered after upload.
+- Loading, request errors and missing images have status messages/retry paths.
+  Attachment changes use the existing authoritative invalidation/audit behavior;
+  they never submit test/review approval or QA evidence.
 
 ## Verification and handoff
 
@@ -244,5 +271,39 @@ Atomic multipart was selected per the implementation request. SQLite BLOBs trade
 larger DB backups and bounded request memory for eliminating filesystem orphan
 recovery and staging-token lifecycle complexity. Staged uploads would improve
 per-image progress/retry but require durable expiry and cleanup; screenshot reuse
-would violate domain ownership. Remaining integration gates are FLY-0044 UI,
-FLY-0045 full desktop/mobile/a11y/E2E and independent decision/review/QA approval.
+would violate domain ownership. `tests/task-attachments-ui.test.ts` exercises the
+real production UI and API at 1440x900 and 390x844, including interrupted commit
+retry, image order, Markdown blocking/insertion/removal, Task/Subtask/Bug creation,
+Done read-only, focus and unchanged QA state. The isolated component harness also
+checks paste/drop, object URL cleanup, busy state and lightbox keyboard navigation.
+Independent decision/review/QA approval remains explicit and pending.
+
+### Integration verification, 2026-10-19
+
+- `npm.cmd run typecheck`: passed.
+- `npm.cmd test`: **110 passed, 0 failed, 0 skipped**, including real API/domain/CLI
+  image tests and existing screenshot, engineering and Skill Engine regressions.
+  Log: `data/test-suite-final.log` (local, ignored).
+- After the final dialog-centering CSS fix, the focused component, integrated
+  image and Inspector regression suite: **6 passed, 0 failed, 0 skipped**.
+  Log: `data/ui-final.log`.
+- Production build passed with `node node_modules/vite/bin/vite.js build --config
+  apps/web/vite.config.ts --configLoader native`, following successful typecheck.
+  The normal `npm.cmd run build` config bundler could not traverse sandbox parent
+  directories through the shared node_modules junction. Native config loading
+  avoids that restriction; the existing >500 kB bundle advisory remains.
+- `npm.cmd run smoke`: passed after final build; desktop/mobile project, task,
+  Preview and explicit QA setup, zero browser runtime errors, mobile scroll width
+  390/viewport 390. Log: `data/smoke-final.log`.
+- Image screenshots: `data/qa/task-images-composer-{1440,390}.png`,
+  `task-images-gallery-{1440,390}.png`, and `task-images-{1440,390}.png`.
+  Images were inspected locally; capture is not a persisted QA verdict.
+- Source areas: Board/Inspector in App, typed clients in api, Markdown renderer,
+  URL/validation helpers, shared composer/gallery/CSS, regression harnesses and
+  smoke selectors. Backend contract and `packages/skills/` were not modified.
+- Contract deviations: stable Markdown insertion is offered after creation;
+  persisted alt-text editing/reordering remains unavailable because the canonical
+  API does not expose those mutations. Indeterminate request progress is used.
+- Shared database opening was denied by the sandbox, so authoritative CLI
+  `task.context` reads used a consistent read-only backup inside this worktree.
+  No shared task report, review, QA verdict, status or approval was changed.

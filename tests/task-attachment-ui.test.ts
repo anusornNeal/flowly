@@ -20,9 +20,10 @@ URL.revokeObjectURL = url => {window.revoked.push(url); revoke(url);};
 const empty = () => ({title:'',description:'',priority:'medium',attachments:[]});
 function Harness(){
  const [value,setValue] = useState(empty), [open,setOpen] = useState(false), [done,setDone] = useState(false);
- const [images,setImages] = useState([{id:'one',name:'one.png',src:'/fixture.png',altText:'First image'},
- {id:'two',name:'two.png',src:'/fixture.png'}, {id:'missing',name:'deleted.png',missing:true},
- {id:'broken',name:'broken.png',src:'/broken.png'}, {id:'unsafe',name:'external.png',src:'https://example.com/never.png'}]);
+ const imageUrl = suffix => '/api/task-attachments/att_12345678-1234-1234-1234-12345678900'+suffix+'/file?projectId=proj_12345678-1234-1234-1234-123456789abc';
+ const [images,setImages] = useState([{id:'one',name:'one.png',src:imageUrl('1'),altText:'First image'},
+ {id:'two',name:'two.png',src:imageUrl('2')}, {id:'missing',name:'deleted.png',missing:true},
+ {id:'broken',name:'broken.png',src:imageUrl('3')}, {id:'unsafe',name:'external.png',src:'https://example.com/never.png'}]);
  window.setImages=setImages;
  return React.createElement(React.Fragment,null,
  React.createElement('button',{onClick:()=>setOpen(true)},'New task'),
@@ -46,7 +47,7 @@ function browserBundle() {
   const visit = (file: string, source = fs.readFileSync(file, 'utf8')): string => {
     if (modules.has(file)) return file;
     modules.set(file, '');
-    let code = file.endsWith('.tsx') ? ts.transpileModule(source, { compilerOptions: {
+    let code = /\.tsx?$/.test(file) ? ts.transpileModule(source, { compilerOptions: {
       module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022, esModuleInterop: true,
     } }).outputText : source;
     code = code.replace(/require\(["']([^"']+)["']\)/g, (_match, specifier: string) => {
@@ -66,8 +67,8 @@ test('isolated attachment UI: drafts, validation, retry, cleanup, gallery, keybo
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j0WQAAAAASUVORK5CYII=', 'base64');
   const bundle = browserBundle();
   const server = createServer((req, res) => {
-        if (req.url === '/fixture.png') { res.setHeader('Content-Type', 'image/png'); res.end(png); return; }
-        if (req.url === '/broken.png') { res.statusCode = 404; res.end(); return; }
+        if (req.url?.startsWith('/api/task-attachments/att_12345678-1234-1234-1234-123456789003/')) { res.statusCode = 404; res.end(); return; }
+        if (req.url?.startsWith('/api/task-attachments/')) { res.setHeader('Content-Type', 'image/png'); res.end(png); return; }
         if (req.url === '/harness.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(bundle); return; }
         if (req.url === '/media.css') { res.setHeader('Content-Type', 'text/css'); res.end(fs.readFileSync('apps/web/src/components/taskAttachments.css')); return; }
         if (req.url === '/attachment-test') {
@@ -133,7 +134,7 @@ test('isolated attachment UI: drafts, validation, retry, cleanup, gallery, keybo
     assert.equal(await composer.locator('.task-media-drafts li').count(), 9);
     await page.evaluate(() => { (window as any).holdSubmit = true; });
     await composer.getByRole('button', { name: 'Create subtask', exact: true }).click();
-    await composer.getByText('Creating card…').waitFor();
+    await composer.getByRole('progressbar', { name: 'Saving images' }).waitFor();
     assert.equal(await composer.getByRole('button', { name: 'Cancel', exact: true }).isDisabled(), true);
     assert.equal(await page.getByLabel('Title (required)').isDisabled(), true);
     await page.keyboard.press('Escape'); assert.equal(await composer.isVisible(), true);

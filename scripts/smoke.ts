@@ -28,13 +28,14 @@ try{
  if(fontAssets.thai<1||fontAssets.latin<1)throw Error('Self-hosted fonts unavailable '+JSON.stringify(fontAssets));
  await desktop.getByRole('button',{name:/Task Board/}).first().click();
  await desktop.locator('#new-task-title').fill('Capture QA Case');
- await desktop.locator('.quick-create button').click();
+ await desktop.locator('.quick-create button[type="submit"], .quick-create button.primary-button').click();
  await desktop.getByText('Capture QA Case').waitFor();
  await desktop.screenshot({path:path.join(artifactDir,'desktop.png'),fullPage:true});
  // Full Web flow: real Preview authoring, frozen revision and explicit Approval create QA cases.
  await desktop.getByRole('button',{name:/Preview & Visual QA/}).first().click();
  await desktop.getByPlaceholder('New preview name').fill('QA Mock Preview');
- await desktop.getByRole('combobox',{name:'Link preview to task'}).selectOption({label:'FLY-0001: Capture QA Case'});
+ await desktop.getByRole('combobox',{name:'Link preview to task'}).click();
+ await desktop.getByRole('option',{name:'FLY-0001: Capture QA Case',exact:true}).click();
  await desktop.getByRole('button',{name:'New preview'}).click();
  await desktop.getByRole('button',{name:'Freeze revision'}).click();
  await desktop.getByText('Rev 1').waitFor();

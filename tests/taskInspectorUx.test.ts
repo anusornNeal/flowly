@@ -116,7 +116,7 @@ test('FLY-0027 / FLY-0039 / FLY-0041: modal tabs, hierarchy, themed selects and 
   await page.locator('.board-task').filter({hasText:'Parent scope'}).click();
   const lane=modal.getByRole('combobox',{name:'Change task lane'});
   await lane.focus();await lane.press('Shift+Tab');
-  assert.equal(await page.locator(':focus').getAttribute('id'),'inspector-panel-0','Portal trigger stays in modal focus trap');
+  assert.equal(await page.locator(':focus').textContent(),'Add images','Portal trigger wraps to the last Overview control inside the modal');
   await lane.click();await lane.press('Escape');assert.equal(await modal.isVisible(),true,'Escape closes select before modal');
   await lane.click();await page.getByRole('option',{name:'To-do',exact:true}).click();
   await modal.locator('.task-inspector-meta').getByText('To-do',{exact:true}).waitFor();
