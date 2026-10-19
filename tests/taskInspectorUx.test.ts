@@ -5,13 +5,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { createServer } from '../apps/api/src/server.js';
 import { openChromium } from '../packages/capture/src/renderer.js';
+import { startSourceWeb } from './qa-source-build.test.js';
 
-test('FLY-0027 / FLY-0039 / FLY-0041: modal tabs, hierarchy, themed selects and mobile accessibility',async()=>{
+test('FLY-0027 / FLY-0039 / FLY-0041: modal tabs, hierarchy, themed selects and mobile accessibility',async t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'flowly-ux-'));
  const api=await createServer({root});
+ t.after(async()=>{try{await api.close();}finally{fs.rmSync(root,{recursive:true,force:true});}});
+ const apiBase=await api.listen({host:'127.0.0.1',port:0});
+ const web=await startSourceWeb(apiBase);
+ t.after(()=>web.close());
  const browser=await openChromium(true);
- try{
-  const base=await api.listen({host:'127.0.0.1',port:0});
+ t.after(()=>browser.close());
+  const base=web.base;
   const operation=async(name:string,payload:Record<string,unknown>)=>{
    const response=await api.inject({method:'POST',url:'/api/operations/'+name,payload,headers:{host:'127.0.0.1'}});
    assert.equal(response.statusCode,200,response.body);return response.json().result;
@@ -140,5 +145,4 @@ test('FLY-0027 / FLY-0039 / FLY-0041: modal tabs, hierarchy, themed selects and 
   await page.getByRole('option',{name:'mobile',exact:true}).click();
   assert.equal(await page.getByRole('combobox',{name:'Device',exact:true}).first().textContent(),'mobile');
   assert.deepEqual(errors,[]);
- }finally{await browser.close();await api.close();fs.rmSync(root,{recursive:true,force:true});}
 });

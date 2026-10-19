@@ -8,6 +8,7 @@ import { createServer } from '../apps/api/src/server.js';
 import { openChromium } from '../packages/capture/src/renderer.js';
 import { taskImageUrl, referencedTaskImage } from '../apps/web/src/taskImageUrls.js';
 import { validateTaskImage, TASK_IMAGE_MAX_BYTES } from '../apps/web/src/taskImageValidation.js';
+import { startSourceWeb } from './qa-source-build.test.js';
 
 test('client image limits include exactly 25 MiB and reject empty or unsupported files',()=>{
  for(const type of ['image/png','image/jpeg','image/webp'])assert.equal(validateTaskImage({type,size:TASK_IMAGE_MAX_BYTES}),undefined);
@@ -24,12 +25,16 @@ test('attachment URL allowlist rejects remote, malformed and non-attachment rout
  assert.equal(referencedTaskImage(url,[]),undefined,'Valid URL still needs current task membership');
 });
 
-for(const viewport of [{width:1440,height:900},{width:390,height:844}])test(`FLY-0040 / FLY-0044 image workflow ${viewport.width}x${viewport.height}`,async()=>{
+for(const viewport of [{width:1440,height:900},{width:390,height:844}])test(`FLY-0040 / FLY-0044 image workflow ${viewport.width}x${viewport.height}`,async t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'flowly-image-ui-'));
  const api=await createServer({root});
+ t.after(async()=>{try{await api.close();}finally{fs.rmSync(root,{recursive:true,force:true});}});
+ const apiBase=await api.listen({host:'127.0.0.1',port:0});
+ const web=await startSourceWeb(apiBase);
+ t.after(()=>web.close());
  const browser=await openChromium(true);
- try{
-  const base=await api.listen({host:'127.0.0.1',port:0});
+ t.after(()=>browser.close());
+  const base=web.base;
   const operation=async(name:string,payload:Record<string,unknown>)=>{
    const response=await api.inject({method:'POST',url:'/api/operations/'+name,payload,headers:{host:'127.0.0.1'}});
    assert.equal(response.statusCode,200,response.body);return response.json().result;
@@ -134,5 +139,4 @@ for(const viewport of [{width:1440,height:900},{width:390,height:844}])test(`FLY
   const detail=(await (await page.request.get(base+'/api/tasks/'+task.id)).json()).result;
   assert.equal(detail.task.testsPassed,false);assert.equal(detail.task.reviewApproved,false);assert.deepEqual(detail.cases,[]);
   assert.deepEqual(unexpectedImages,[]);assert.deepEqual(errors,[]);
- }finally{await browser.close();await api.close();fs.rmSync(root,{recursive:true,force:true});}
 });
