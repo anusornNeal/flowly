@@ -1,0 +1,20 @@
+﻿.theme-select-native{display:none!important}
+.theme-select-host{display:inline-flex;min-width:0;max-width:100%;vertical-align:middle}
+.theme-select-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-width:0;min-height:40px;padding:9px 12px;border:1px solid #e0e6f0;border-radius:8px;background:#fff;color:#24334f;text-align:left;font:inherit;font-weight:400}
+.theme-select-trigger>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.theme-select-trigger>svg{flex-shrink:0}.theme-select-trigger:focus-visible{outline:3px solid #adc4ff;outline-offset:2px}
+.theme-select-trigger.is-dark{background:#1a263e;border-color:#34435c;color:#e3e9f4}
+.theme-select-popup{position:fixed;z-index:100;overflow-y:auto;overscroll-behavior:contain;border:1px solid #d9e1ef;border-radius:9px;background:#fff;color:#24334f;padding:5px;box-shadow:0 12px 40px #12203b33;font:13px/1.5 var(--font-primary);font-weight:400}
+.theme-select-popup.is-dark{background:#1a263e;border-color:#34435c;color:#e3e9f4}
+.theme-select-option{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:9px 10px;border-radius:5px;cursor:pointer;overflow-wrap:anywhere}
+.theme-select-option>span{min-width:0;flex:1}.theme-select-option>svg{flex-shrink:0}
+.theme-select-option.is-active{background:#eaf0ff;color:#2949b4;outline:1px solid #a8bced;outline-offset:-1px}
+.is-dark .theme-select-option.is-active{background:#2f4266;color:#fff}
+.theme-select-option[aria-disabled=true]{opacity:.45;cursor:not-allowed}
+.theme-select-group,.theme-select-empty{padding:8px 10px;color:#718198;font-size:11px}
+.workspace-copy>.theme-select-host{width:100%}.workspace-selector>.lucide-chevron-down,.skill-filter>.lucide-chevron-down{display:none}
+.workspace-copy .theme-select-trigger{padding:3px 0;min-height:32px;border:0;background:transparent}
+.engineering-form label>.theme-select-host,.engineering-decision-box label>.theme-select-host,.screen-config label>.theme-select-host,.modal label>.theme-select-host{width:100%}
+.preview-selector>.theme-select-host{max-width:280px}.inbox-row>.theme-select-host{max-width:220px}
+@media(max-width:690px){.theme-select-trigger{min-height:44px}.task-inspector-actions>.theme-select-host{flex:1;max-width:200px}.preview-selector>.theme-select-host{max-width:100%}}
+@media(forced-colors:active){.theme-select-trigger,.theme-select-popup{border:1px solid ButtonText}.theme-select-option.is-active{outline:2px solid Highlight}}
