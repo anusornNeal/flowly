@@ -1,7 +1,7 @@
 /* Local theme hooks permit shell theming without changing shared styles. */
 .task-media{--media-bg:var(--task-media-bg,#fff);--media-ink:var(--task-media-ink,#24334f);--media-border:var(--task-media-border,#e0e6f0);--media-soft:var(--task-media-soft,#f5f7fb);--media-accent:var(--task-media-accent,#4f6df0);--media-muted:var(--task-media-muted,#64748b);color:var(--media-ink);font:14px/1.5 var(--font-primary,'LINE Seed Sans TH','Inter Variable',sans-serif);min-width:0;overflow-wrap:anywhere}
 .task-media,.task-media *{box-sizing:border-box}
-dialog.task-media{background:var(--media-bg);border:1px solid var(--media-border);border-radius:14px;padding:24px;max-height:calc(100dvh - 32px);max-width:calc(100vw - 24px);overflow:auto;box-shadow:0 20px 70px #111a3040}
+dialog.task-media{margin:auto;background:var(--media-bg);border:1px solid var(--media-border);border-radius:14px;padding:24px;max-height:calc(100dvh - 32px);max-width:calc(100vw - 24px);overflow:auto;box-shadow:0 20px 70px #111a3040}
 dialog.task-media::backdrop{background:#111a3099}
 .task-composer{width:720px}
 .task-media h2,.task-media h3{color:inherit;margin:0;font-size:18px}

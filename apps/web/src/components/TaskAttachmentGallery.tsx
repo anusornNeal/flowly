@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ComponentPropsWithoutRef } from 'react';
 import './taskAttachments.css';
+import { taskImageUrl } from '../taskImageUrls.js';
 
 /** Shared modal boundary: native inert background, explicit Tab loop, focus restore. */
 export function TaskMediaDialog({ onKeyDown, ...props }: ComponentPropsWithoutRef<'dialog'>) {
@@ -10,7 +11,8 @@ export function TaskMediaDialog({ onKeyDown, ...props }: ComponentPropsWithoutRe
     element?.showModal();
     return () => { element?.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
   }, []);
-  return <dialog {...props} ref={dialog} onKeyDown={event => {
+  return <dialog role="dialog" {...props} ref={dialog} onKeyDown={event => {
+    event.stopPropagation();
     onKeyDown?.(event);
     if (event.defaultPrevented || event.key !== 'Tab') return;
     const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button,input,textarea,select,a[href],[tabindex]'))
@@ -51,12 +53,7 @@ export interface TaskAttachmentGalleryProps {
 }
 
 export function safeTaskImageSource(source?: string, origin = typeof window === 'undefined' ? undefined : window.location.origin): string | undefined {
-  if (!source || !origin || /[\\\s\u0000-\u001f]/.test(source)) return undefined;
-  try {
-    const url = new URL(source, origin);
-    if (!['http:', 'https:'].includes(url.protocol) || url.origin !== origin || url.username || url.password) return undefined;
-    return url.href;
-  } catch { return undefined; }
+  return origin ? taskImageUrl(source, origin) : undefined;
 }
 
 function GalleryImage({ attachment, thumbnail = false, onOpen }: { attachment: TaskAttachmentImage; thumbnail?: boolean; onOpen?: () => void }) {

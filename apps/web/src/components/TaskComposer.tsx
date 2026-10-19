@@ -2,9 +2,8 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import './taskAttachments.css';
 import { TaskMediaDialog } from './TaskAttachmentGallery';
 
-export const TASK_IMAGE_LIMIT = 10;
-export const TASK_IMAGE_MAX_BYTES = 25 * 1024 * 1024;
-export const TASK_IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp';
+import { TASK_IMAGE_LIMIT, TASK_IMAGE_ACCEPT, validateTaskImage } from '../taskImageValidation.js';
+export { TASK_IMAGE_LIMIT, TASK_IMAGE_MAX_BYTES, TASK_IMAGE_ACCEPT, validateTaskImage } from '../taskImageValidation.js';
 
 export interface TaskDraftAttachment { id: string; file: File; altText: string }
 export interface TaskComposerValue {
@@ -18,6 +17,8 @@ export interface TaskComposerProps {
   value: TaskComposerValue;
   kind?: 'task' | 'subtask' | 'bug';
   parentId?: string;
+  mode?: 'create' | 'add';
+  existingCount?: number;
   onChange: (value: TaskComposerValue) => void;
   /** Persist once, atomically, with files in array order. Parent owns retry/idempotency key.
    * No network/staging happens here. Keep value on failure; reset it on success/cancel.
@@ -36,13 +37,6 @@ export interface TaskComposerProps {
   renderDescriptionPreview?: (markdown: string) => ReactNode;
 }
 
-export function validateTaskImage(file: Pick<File, 'type' | 'size'>): string | undefined {
-  if (!TASK_IMAGE_ACCEPT.split(',').includes(file.type)) return 'Use a PNG, JPEG or WebP image.';
-  if (file.size === 0) return 'This file is empty.';
-  if (file.size > TASK_IMAGE_MAX_BYTES) return 'Image exceeds 25 MiB.';
-  return undefined;
-}
-
 /** Browser checks are advisory; backend must decode and validate actual image bytes. */
 export function DraftImagePreview({ file, alt }: { file: File; alt: string }) {
   const [preview, setPreview] = useState<{ file: File; url: string }>();
@@ -57,7 +51,7 @@ export function DraftImagePreview({ file, alt }: { file: File; alt: string }) {
   return preview?.file === file ? <img src={preview.url} alt={alt} onError={() => setBroken(true)} /> : <span>Loading preview…</span>;
 }
 
-export function TaskComposer({ open, value, kind = 'task', parentId, onChange, onSubmit, onCancel,
+export function TaskComposer({ open, value, kind = 'task', parentId, mode = 'create', existingCount = 0, onChange, onSubmit, onCancel,
   submitting = false, progress, error, fileErrors, getAttachmentMarkdown, renderDescriptionPreview }: TaskComposerProps) {
   const description = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -76,7 +70,7 @@ export function TaskComposer({ open, value, kind = 'task', parentId, onChange, o
     const attachments = [...value.attachments];
     const errors: string[] = [];
     for (const file of files) {
-      const reason = validateTaskImage(file) ?? (attachments.length >= TASK_IMAGE_LIMIT ? 'Maximum 10 images per card.' : undefined);
+      const reason = validateTaskImage(file) ?? (attachments.length + existingCount >= TASK_IMAGE_LIMIT ? 'Maximum 10 images per card.' : undefined);
       if (reason) errors.push(`${file.name}: ${reason}`);
       else attachments.push({ id: crypto.randomUUID(), file, altText: '' });
     }
@@ -89,7 +83,7 @@ export function TaskComposer({ open, value, kind = 'task', parentId, onChange, o
     <form onSubmit={async event => {
       event.preventDefault();
       if (busy || locked.current || !value.title.trim()) return;
-      if (value.attachments.length > TASK_IMAGE_LIMIT || value.attachments.some(item => validateTaskImage(item.file))) {
+      if (value.attachments.length + existingCount > TASK_IMAGE_LIMIT || value.attachments.some(item => validateTaskImage(item.file))) {
         setLocalError('Remove invalid images before creating this card.'); return;
       }
       locked.current = true; setPending(true); setLocalError('');
@@ -100,10 +94,10 @@ export function TaskComposer({ open, value, kind = 'task', parentId, onChange, o
       const files = Array.from(event.clipboardData.files);
       if (files.length) { event.preventDefault(); addFiles(files); }
     }}>
-      <h2 id={`${id}-heading`}>Create {kind}</h2>
+      <h2 id={`${id}-heading`}>{mode === 'add' ? 'Add images' : `Create ${kind}`}</h2>
       {parentId && <p className="task-media-muted">Parent: {parentId}</p>}
       <fieldset disabled={busy}>
-        <label htmlFor={`${id}-title`}>Title (required)</label>
+        {mode === 'create' && <><label htmlFor={`${id}-title`}>Title (required)</label>
         <input autoFocus id={`${id}-title`} required value={value.title} onChange={event => update({ title: event.target.value })} />
         <label htmlFor={`${id}-description`}>Description (Markdown)</label>
         <textarea ref={description} id={`${id}-description`} rows={6} value={value.description} onChange={event => update({ description: event.target.value })} />
@@ -112,11 +106,11 @@ export function TaskComposer({ open, value, kind = 'task', parentId, onChange, o
         <label htmlFor={`${id}-priority`}>Priority</label>
         <select id={`${id}-priority`} value={value.priority} onChange={event => update({ priority: event.target.value as TaskComposerValue['priority'] })}>
           <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
-        </select>
+        </select></>}
         <section aria-label="Draft images" onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = busy ? 'none' : 'copy'; }}
           onDrop={event => { event.preventDefault(); addFiles(Array.from(event.dataTransfer.files)); }}>
           <div className="task-media-dropzone">
-            <strong>Images · {value.attachments.length}/10</strong>
+            <strong>Images · {value.attachments.length + existingCount}/10</strong>
             <p id={`${id}-help`}>Drop images here, paste into this form, or choose files. PNG, JPEG, WebP · up to 25 MiB each.</p>
             <input ref={picker} type="file" multiple accept={TASK_IMAGE_ACCEPT} hidden onChange={event => {
               addFiles(Array.from(event.target.files ?? [])); event.target.value = '';
@@ -129,7 +123,7 @@ export function TaskComposer({ open, value, kind = 'task', parentId, onChange, o
               <div className="task-media-draft-fields">
                 <strong className="task-media-name">{item.file.name}</strong>
                 <span className="task-media-muted">{(item.file.size / 1024 / 1024).toFixed(2)} MiB</span>
-                <label>Alt text for {item.file.name}<input value={item.altText} onChange={event => update({ attachments: value.attachments.map(attachment => attachment.id === item.id ? { ...attachment, altText: event.target.value } : attachment) })} /></label>
+                <label>Alt text for {item.file.name}<input maxLength={2000} value={item.altText} onChange={event => update({ attachments: value.attachments.map(attachment => attachment.id === item.id ? { ...attachment, altText: event.target.value } : attachment) })} /></label>
                 {(fileErrors?.[item.id] || validateTaskImage(item.file)) && <p role="alert">{fileErrors?.[item.id] || validateTaskImage(item.file)}</p>}
                 <div className="task-media-actions">
                   {[-1, 1].map(direction => <button key={direction} type="button" disabled={index + direction < 0 || index + direction >= value.attachments.length}
@@ -155,10 +149,10 @@ export function TaskComposer({ open, value, kind = 'task', parentId, onChange, o
       </fieldset>
       {validation.length > 0 && <div role="alert"><ul>{validation.map((message, index) => <li key={index}>{message}</li>)}</ul><button type="button" onClick={() => setValidation([])}>Dismiss file errors</button></div>}
       {(error || localError) && <p role="alert">{error || localError}</p>}
-      {busy && <div role="status">Creating card… <progress aria-label="Creating card" max={100} value={progress === undefined ? undefined : Math.max(0, Math.min(100, progress))} /></div>}
+      {busy && <div role="status">{mode === 'add' ? 'Adding images…' : 'Creating card…'} <progress aria-label="Saving images" max={100} value={progress === undefined ? undefined : Math.max(0, Math.min(100, progress))} /></div>}
       <footer className="task-media-actions">
         <button type="button" disabled={busy} onClick={cancel}>Cancel</button>
-        <button className="task-media-primary" type="submit" disabled={busy || !value.title.trim()}>Create {kind}</button>
+        <button className="task-media-primary" type="submit" disabled={busy || !value.title.trim() || (mode === 'add' && !value.attachments.length)}>{mode === 'add' ? 'Add images' : `Create ${kind}`}</button>
       </footer>
     </form>
   </TaskMediaDialog>;

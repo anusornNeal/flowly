@@ -9,6 +9,10 @@ import EngineeringPanel from './EngineeringPanel.js';
 import SkillAdmin from './SkillAdmin.js';
 import TaskMarkdown from './TaskMarkdown.js';
 import { ThemeSelectEnhancer, syncThemeSelects } from './components/ThemeSelect.js';
+import { TaskComposer, type TaskComposerValue } from './components/TaskComposer.js';
+import { TaskAttachmentGallery } from './components/TaskAttachmentGallery.js';
+import { createTaskWithAttachments, addTaskAttachments, removeTaskAttachment } from './api.js';
+import { attachmentMarkdown } from './taskImageUrls.js';
 
 const inspectorTabs=['Overview','Work','QA & Review','Activity'] as const;
 type DraftControl=HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement;
@@ -36,6 +40,7 @@ export default function App(){
  const [selectedTask,setSelectedTask]=useState<string>('');
  const [selectedPreview,setSelectedPreview]=useState<string>('');
  const [detail,setDetail]=useState<Detail|null>(null);
+ const [detailError,setDetailError]=useState('');
  const inspectorDrafts=useRef(new Map<DraftControl,{element:DraftControl;initial:string}>());
  const [hasAuxiliaryEdits,setHasAuxiliaryEdits]=useState(false);
  const [inspectorTab,setInspectorTab]=useState<InspectorTab>('Overview');
@@ -50,6 +55,10 @@ export default function App(){
  const [projectUrl,setProjectUrl]=useState('');
  const [taskTitle,setTaskTitle]=useState('');
  const [taskDescription,setTaskDescription]=useState('');
+ const [composer,setComposer]=useState<{kind:'task'|'subtask'|'bug';parentId?:string;taskId?:string;originTaskId?:string}|null>(null);
+ const [composerValue,setComposerValue]=useState<TaskComposerValue>({title:'',description:'',priority:'medium',attachments:[]});
+ const composerKey=useRef(crypto.randomUUID());
+ const composerResult=useRef<TaskRecord|undefined>(undefined);
  const [taskReason,setTaskReason]=useState('');
  const [checkText,setCheckText]=useState('');
  const [bugText,setBugText]=useState('');
@@ -127,7 +136,13 @@ export default function App(){
  const loadDetail=useCallback(async(id:string)=>{
   if(!id)return;
   const requestId=++taskRequestRef.current;
-  const d=await get<Detail>('tasks/'+encodeURIComponent(id));
+  setDetailError('');
+  let d:Detail;
+  try{d=await get<Detail>('tasks/'+encodeURIComponent(id));}
+  catch(error){
+   if(requestId===taskRequestRef.current&&currentTaskIdRef.current===id)setDetailError(error instanceof Error?error.message:String(error));
+   throw error;
+  }
   if(requestId!==taskRequestRef.current||currentTaskIdRef.current!==id)return;
   setDetail(d);
   setTaskEdit(previous=>editingTaskRef.current?previous:{title:d.task.title,description:d.task.description,acceptanceCriteria:d.task.acceptanceCriteria,verificationStep:d.task.verificationStep});
@@ -226,7 +241,7 @@ export default function App(){
  useEffect(()=>{
   if(!selectedTask)return;
   const keyHandler=(event:KeyboardEvent)=>{
-   if(event.defaultPrevented)return;
+   if(event.defaultPrevented||document.querySelector('dialog[open]'))return;
    if(event.key==='Escape'){event.preventDefault();closeTask();return;}
    if(event.key!=='Tab')return;
    const dialog=taskDialogRef.current;if(!dialog)return;
@@ -239,10 +254,43 @@ export default function App(){
   return ()=>window.removeEventListener('keydown',keyHandler);
  },[selectedTask,hasUnsavedInspectorEdits,busy]);
  useEffect(()=>{
-  if(!hasUnsavedInspectorEdits)return;
+  if(!hasUnsavedInspectorEdits&&!composer)return;
   const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};
   window.addEventListener('beforeunload',warn);return ()=>window.removeEventListener('beforeunload',warn);
- },[hasUnsavedInspectorEdits]);
+ },[hasUnsavedInspectorEdits,composer]);
+
+ const openComposer=(kind:'task'|'subtask'|'bug',options:{parentId?:string;taskId?:string;originTaskId?:string}={})=>{
+  if(busy||!discardTaskEdits())return;
+  composerKey.current=crypto.randomUUID();composerResult.current=undefined;
+  setComposerValue({title:options.taskId?activeTask?.title||'Images':kind==='task'?taskTitle:'',description:kind==='task'?taskDescription:'',priority:'medium',attachments:[]});
+  setComposer({kind,...options});
+ };
+ const cancelComposer=()=>{
+  if(busy)return;
+  if(((!composer?.taskId&&(composerValue.title||composerValue.description))||composerValue.attachments.length)&&!window.confirm('Discard unsaved image draft?'))return;
+  setComposer(null);
+ };
+ const submitComposer=async(value:TaskComposerValue)=>{
+  if(!composer||busy)return;
+  setBusy(true);
+  try{
+   if(composer.taskId){
+    await addTaskAttachments(composer.taskId,{projectId,idempotencyKey:composerKey.current,altTexts:value.attachments.map(item=>item.altText)},value.attachments.map(item=>item.file));
+   }else if(!composerResult.current){
+    const task={projectId,title:value.title,description:value.description,priority:value.priority,type:composer.kind==='bug'?'bug' as const:'task' as const,...(composer.parentId?{parentId:composer.parentId}:{}),...(composer.originTaskId?{originTaskId:composer.originTaskId}:{})};
+    composerResult.current=value.attachments.length?(await createTaskWithAttachments({task,idempotencyKey:composerKey.current,altTexts:value.attachments.map(item=>item.altText)},value.attachments.map(item=>item.file))).task:await op<TaskRecord>('task.create',task);
+   }
+   setComposer(null);setTaskTitle('');setTaskDescription('');
+   try{await refresh();if(currentTaskIdRef.current)await loadDetail(currentTaskIdRef.current);notify('Saved successfully');}
+   catch{notify('Saved, but refresh failed. Reopen the card to reload images.',true);}
+  }finally{setBusy(false);}
+ };
+ const deleteTaskImage=async(id:string)=>{
+  if(busy||!activeTask||activeTask.status==='done')return;
+  setBusy(true);
+  try{await removeTaskAttachment(id,projectId);await loadDetail(activeTask.id);await refresh();}
+  finally{setBusy(false);}
+ };
 
  const createProject=async(e:FormEvent)=>{
   e.preventDefault();setBusy(true);
@@ -385,9 +433,9 @@ export default function App(){
     </>}
     {page==='board'&&<>
      <header className="page-heading"><div><div className="eyebrow">DELIVERY WORKFLOW</div><h1>Task Board<span className="dot">.</span></h1><p>Top-level tasks and bugs. Subtasks stay with their parent; counts include all top-level issues.</p></div>
-      <button className="primary-button" onClick={()=>document.getElementById('new-task-title')?.focus()}><Plus size={16}/> New task</button></header>
+      <button className="primary-button" disabled={!projectId||busy} onClick={()=>openComposer('task')}><Plus size={16}/> New task</button><button className="outline-button" disabled={!projectId||busy} onClick={()=>openComposer('bug')}>New bug</button></header>
      <form className="quick-create" onSubmit={createTask}><input id="new-task-title" placeholder="New task title" value={taskTitle} onChange={e=>setTaskTitle(e.target.value)} required/>
-      <input placeholder="Optional description" value={taskDescription} onChange={e=>setTaskDescription(e.target.value)}/><button className="primary-button" disabled={!projectId||busy}>Create</button></form>
+      <input placeholder="Optional description" value={taskDescription} onChange={e=>setTaskDescription(e.target.value)}/><button className="primary-button" disabled={!projectId||busy}>Create</button><button type="button" className="outline-button" disabled={!projectId||busy} onClick={()=>openComposer('task')}>Add images / expand</button></form>
      <div className="board-scroll"><div className="board-columns">{lanes.map(lane=><section key={lane} className="board-lane"
        onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData('text/plain');if(id)statusSelect(id,lane);}}>
       <header><span className={'lane-indicator lane-'+lane}/><h2>{humanStatus(lane)}</h2><em>{counts[lane]||0}</em></header>
@@ -450,13 +498,18 @@ export default function App(){
       {editingTask?<div className="task-editor">
        <label>Title<input value={taskEdit.title} onChange={e=>setTaskEdit({...taskEdit,title:e.target.value})}/></label>
        <label>Description (Markdown)<textarea className="task-description-editor" rows={12} value={taskEdit.description} onChange={e=>setTaskEdit({...taskEdit,description:e.target.value})}/></label>
+       {(detail?.attachments||[]).map(image=><button type="button" className="outline-button" key={image.id} onClick={()=>setTaskEdit(previous=>({...previous,description:previous.description+'\n\n'+attachmentMarkdown(image)}))}>Insert {image.name} in description</button>)}
        <label>Acceptance criteria (Markdown)<textarea rows={6} value={taskEdit.acceptanceCriteria} onChange={e=>setTaskEdit({...taskEdit,acceptanceCriteria:e.target.value})}/></label>
        <label>Verification steps (Markdown)<textarea rows={5} value={taskEdit.verificationStep} onChange={e=>setTaskEdit({...taskEdit,verificationStep:e.target.value})}/></label>
       </div>:<div className="task-read-fields">
-       <div className="task-read-section task-description"><h3>Description</h3><TaskMarkdown content={activeTask.description} emptyMessage="No description yet."/></div>
-       {activeTask.acceptanceCriteria&&<div className="task-read-section"><h3>Acceptance criteria</h3><TaskMarkdown content={activeTask.acceptanceCriteria}/></div>}
-       {activeTask.verificationStep&&<div className="task-read-section"><h3>Verification steps</h3><TaskMarkdown content={activeTask.verificationStep}/></div>}
+       <div className="task-read-section task-description"><h3>Description</h3><TaskMarkdown content={activeTask.description} attachments={detail?.attachments} emptyMessage="No description yet."/></div>
+       {activeTask.acceptanceCriteria&&<div className="task-read-section"><h3>Acceptance criteria</h3><TaskMarkdown content={activeTask.acceptanceCriteria} attachments={detail?.attachments}/></div>}
+       {activeTask.verificationStep&&<div className="task-read-section"><h3>Verification steps</h3><TaskMarkdown content={activeTask.verificationStep} attachments={detail?.attachments}/></div>}
       </div>}
+<TaskAttachmentGallery key={activeTask.id} status={activeTask.status} loading={(!detail&&!detailError)||busy} error={detailError}
+ attachments={(detail?.attachments||[]).map(image=>({id:image.id,name:image.name,altText:image.altText,src:image.fileUrl,thumbnailSrc:image.thumbnailUrl}))}
+ onAdd={()=>openComposer('task',{taskId:activeTask.id})} onRemove={image=>deleteTaskImage(image.id)}
+ onRetry={()=>void loadDetail(activeTask.id).catch(error=>notify(String(error),true))}/>
 </section>
        </div>
        <div className="task-inspector-scroll" role="tabpanel" id="inspector-panel-1" aria-labelledby="inspector-tab-1" tabIndex={0} hidden={inspectorTab!==inspectorTabs[1]}>
@@ -480,8 +533,7 @@ export default function App(){
      <details className="task-disclosure" open><summary>Subtasks ({detail?.children.filter(child=>child.status==='done').length||0}/{detail?.children.length||0} done) <ChevronDown size={16}/></summary><section className="panel padded"><div className="mini-eyebrow">CHILD TASKS</div><h2>Subtasks</h2>
       {(detail?.children||[]).map(t=><button className="link-row" key={t.id} onClick={()=>chooseTask(t.id)}><IssueKind task={t}/><span>{t.displayId}</span><strong>{t.title}</strong><Pill>{humanStatus(t.status)}</Pill><small>{t.checklist.filter(item=>item.done).length}/{t.checklist.length} checklist</small><ArrowRight size={14}/></button>)}
       {!detail?.children.length&&<Empty title="No subtasks" body="Subtasks have independent workflow and completion gates."/>}
-      {activeTask.status!=='done'&&!activeTask.parentId&&<form className="row-form" onSubmit={e=>{e.preventDefault();void doAction('task.subtask',{projectId,parentId:activeTask.id,title:taskTitle}).then(saved=>{if(saved)setTaskTitle('');});}}>
-       <input required placeholder="New subtask" value={taskTitle} onChange={e=>setTaskTitle(e.target.value)}/><button className="primary-button" disabled={busy}><Plus size={15}/> Add</button></form>}
+      {activeTask.status!=='done'&&!activeTask.parentId&&<button className="primary-button" disabled={busy} onClick={()=>openComposer('subtask',{parentId:activeTask.id})}><Plus size={15}/> New subtask</button>}
      </section></details>
 
        </div>
@@ -532,7 +584,7 @@ export default function App(){
         {finding.caseId&&<button type="button" className="text-button" onClick={()=>{if(closeTask()){setSelectedCase(finding.caseId!);setPage('preview');}}}>
          Inspect QA case {finding.caseId} <ArrowRight size={13}/></button>}
        </div>)}</div>}
-      {activeTask.status==='done'?<div className="post-done"><p>Completed tasks cannot be reopened. New defects become independent linked Bug tasks in Backlog.</p>
+      {activeTask.status==='done'?<div className="post-done"><button className="outline-button" disabled={busy} onClick={()=>openComposer('bug',{originTaskId:activeTask.id})}>New linked bug with images</button><p>Completed tasks cannot be reopened. New defects become independent linked Bug tasks in Backlog.</p>
        <div className="row-form"><input placeholder="New post-Done defect" value={bugText} onChange={e=>setBugText(e.target.value)}/>
         <button className="primary-button" onClick={()=>void doAction('task.post-done-bug',{id:activeTask.id,title:bugText,description:taskReason})}>Create linked Bug</button></div>
        {detail?.linked.map(t=><button className="link-row" key={t.id} onClick={()=>chooseTask(t.id)}>{t.displayId} · {t.title}<ArrowRight size={14}/></button>)}</div>:
@@ -719,6 +771,10 @@ export default function App(){
      </section></div></>}
    </main>
   </div>
+  {composer&&<TaskComposer open value={composerValue} kind={composer.kind} parentId={composer.parentId}
+   mode={composer.taskId?'add':'create'} existingCount={composer.taskId?detail?.attachments.length||0:0} submitting={busy}
+   onChange={value=>{composerKey.current=crypto.randomUUID();composerResult.current=undefined;setComposerValue(value);}}
+   onSubmit={submitComposer} onCancel={cancelComposer} renderDescriptionPreview={markdown=><TaskMarkdown content={markdown}/>}/>}
   {showCreateProject&&<div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="project-modal-title">
    <form className="modal panel" onSubmit={createProject}><div className="mini-eyebrow">FIRST WORKSPACE</div><h2 id="project-modal-title">Create a local project</h2>
     <p>Flowly runs locally and requires no external account.</p>
