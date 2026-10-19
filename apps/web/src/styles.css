@@ -371,3 +371,25 @@ small{font-size:11px}
  .task-read-section.task-description{min-height:170px}
  .task-editor>label>.task-description-editor{min-height:300px}
 }
+
+/* Internal modal navigation stays fixed while each panel scrolls. */
+.inspector-tabs{display:flex;flex-shrink:0;background:#fff;border-bottom:1px solid #e5eaf3;padding:0 22px;gap:14px}
+.inspector-tabs [role=tab]{border:0;border-bottom:3px solid transparent;background:transparent;padding:14px 8px 11px;color:#667891;font-weight:400;min-height:44px}
+.inspector-tabs [aria-selected=true]{border-bottom-color:#5072eb;color:#334ec0}
+.inspector-tabs [aria-disabled=true]{opacity:.5;cursor:wait}
+.task-inspector-scroll[hidden]{display:none}
+.task-inspector-scroll:focus-visible{outline:3px solid #adc4ff;outline-offset:-3px}
+@media(max-width:690px){.inspector-tabs{padding:0 10px;gap:0}.inspector-tabs [role=tab]{flex:1;padding-inline:4px;font-size:12px}.task-inspector-actions .icon-button{min-width:40px;min-height:40px}}
+
+.issue-kind{display:inline-flex;align-items:center;gap:5px;color:#62738c;font-size:11px;font-weight:400;white-space:nowrap}
+.task-card-overline{flex-wrap:wrap;gap:7px}.task-card-overline>.pill{margin-left:auto}
+.child-search-match,.child-blocker{display:block;color:#687a96;font-size:11px;margin:8px 0;overflow-wrap:anywhere}
+.task-parent-breadcrumb{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11px;margin-top:8px;overflow-wrap:anywhere}
+.task-parent-breadcrumb .text-button{padding:0;font-size:inherit;white-space:normal;text-align:left}
+.task-inspector .link-row{flex-wrap:wrap;gap:9px;min-height:44px}
+.task-inspector .link-row strong{min-width:0;overflow-wrap:anywhere;flex:1 1 150px}
+
+.inspector-notice{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;gap:10px;padding:8px 22px;background:#effbf6;color:#1c785f;font-size:12px}.inspector-notice.error{background:#fff3f4;color:#9a3640}.inspector-notice>span{overflow-wrap:anywhere;min-width:0}
+
+.activity-evidence{margin-top:8px;max-width:100%;font-size:11px}.activity-evidence summary{cursor:pointer;color:#536a8b}.activity-evidence pre{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fb;border-radius:6px;padding:10px}
+@media(max-width:690px){.task-inspector-actions{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto}.task-inspector-actions>.theme-select-host{grid-column:1/-1;max-width:none;width:100%}.task-inspector-actions .task-pager{min-width:0}.task-inspector-actions .outline-button{min-height:40px}}

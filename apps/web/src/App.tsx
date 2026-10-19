@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Activity, AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell, Check, CheckCircle2, ChevronDown, CircleDashed,
- Clipboard, Code2, Eye, FileImage, FolderKanban, Grid2X2, History, Image, ListChecks, Monitor, MoreHorizontal,
+ Bug, GitBranch, Clipboard, Code2, Eye, FileImage, FolderKanban, Grid2X2, History, Image, ListChecks, Monitor, MoreHorizontal,
  Maximize2, Minimize2, Plus, RefreshCw, Save, Search, Settings, ShieldCheck, Terminal, Trash2, Upload, WandSparkles, X } from 'lucide-react';
 import type { Actor, ChecklistItem, Preview, Project, QaCase, ScreenSpec, Screenshot, TaskRecord } from '../../../packages/core/src/models.js';
 import { type Detail, type Snapshot, get, op, upload, dateLabel, fileUrl, baselineUrl, diffUrl } from './api.js';
@@ -8,7 +8,12 @@ import { previewDocument } from './previewDocument.js';
 import EngineeringPanel from './EngineeringPanel.js';
 import SkillAdmin from './SkillAdmin.js';
 import TaskMarkdown from './TaskMarkdown.js';
+import { ThemeSelectEnhancer, syncThemeSelects } from './components/ThemeSelect.js';
 
+const inspectorTabs=['Overview','Work','QA & Review','Activity'] as const;
+type DraftControl=HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement;
+const draftControlValue=(element:DraftControl)=>element instanceof HTMLInputElement&&element.type==='checkbox'?String(element.checked):element.value;
+type InspectorTab=typeof inspectorTabs[number];
 type Page='overview'|'board'|'preview'|'skills'|'settings';
 const lanes=['backlog','todo','in-progress','ready-for-review','done'] as const;
 const laneNames:Record<string,string>={'backlog':'Backlog','todo':'To-do','in-progress':'In progress','ready-for-review':'Ready for review','done':'Done'};
@@ -18,6 +23,8 @@ const amount=(v:number)=>v>=1048576?(v/1048576).toFixed(1)+' MB':(v/1024).toFixe
 const safeJson=(text:string,label:string):any=>{try{return JSON.parse(text);}catch{throw new Error('Invalid JSON: '+label);}};
 const defaultScreen=():ScreenSpec=>({id:'screen-'+Math.random().toString(36).slice(2,7),name:'New screen',stateId:'default',viewport:{width:1280,height:800,device:'desktop'},required:true});
 const navList:[Page,typeof Grid2X2][]=[['overview',Grid2X2],['board',FolderKanban],['preview',FileImage],['skills',WandSparkles]];
+const issueKind=(task:TaskRecord)=>task.type==='bug'?'Bug':task.parentId?'Subtask':'Task';
+function IssueKind({task}:{task:TaskRecord}){const Icon=task.type==='bug'?Bug:task.parentId?GitBranch:FolderKanban;return <span className="issue-kind"><Icon size={14} aria-hidden="true"/>{issueKind(task)}</span>;}
 function Pill({children,tone='neutral'}:{children:React.ReactNode;tone?:string}){return <span className={'pill pill-'+tone}>{children}</span>;}
 function Empty({title,body}:{title:string;body?:string}){return <div className="empty"><CircleDashed size={24}/><strong>{title}</strong>{body&&<p>{body}</p>}</div>;}
 function Stamp({value}:{value?:string}){return <time>{dateTime(value)}</time>;}
@@ -29,6 +36,9 @@ export default function App(){
  const [selectedTask,setSelectedTask]=useState<string>('');
  const [selectedPreview,setSelectedPreview]=useState<string>('');
  const [detail,setDetail]=useState<Detail|null>(null);
+ const inspectorDrafts=useRef(new Map<DraftControl,{element:DraftControl;initial:string}>());
+ const [hasAuxiliaryEdits,setHasAuxiliaryEdits]=useState(false);
+ const [inspectorTab,setInspectorTab]=useState<InspectorTab>('Overview');
  const [editingTask,setEditingTask]=useState(false);
  const [inspectorFullscreen,setInspectorFullscreen]=useState(false);
  const [search,setSearch]=useState('');
@@ -49,6 +59,8 @@ export default function App(){
  const [previewName,setPreviewName]=useState('');
  const [previewResetKey,setPreviewResetKey]=useState(0);
  const [previewExpanded,setPreviewExpanded]=useState(false);
+ const projectIdRef=useRef(projectId);projectIdRef.current=projectId;
+ const editingTaskRef=useRef(false);editingTaskRef.current=editingTask;
  const taskDialogRef=useRef<HTMLElement|null>(null);
  const taskReturnFocusRef=useRef<HTMLElement|null>(null);
  const taskRequestRef=useRef(0);
@@ -77,6 +89,7 @@ export default function App(){
  const [previewWarningReason,setPreviewWarningReason]=useState('');
  const [renderQa,setRenderQa]=useState<{revisionId:string;passed:boolean;screens:Array<{screen:string;state:string;critical:number;warnings:number;issues:Array<{code:string;severity:string;message:string;selector?:string;suggestion?:string}>}>}|null>(null);
 
+ useEffect(()=>{syncThemeSelects();});
  const project=useMemo(()=>projects.find(p=>p.id===projectId),[projectId,projects]);
  const tasks=snapshot?.tasks||[];
  const previews=snapshot?.previews||[];
@@ -88,14 +101,19 @@ export default function App(){
  const taskCases=cases.filter(c=>c.taskId===selectedTask);
  const visibleBugs=(detail?.bugs||[]).filter(b=>bugFilter==='all'||b.status===bugFilter);
  const selectedBug=visibleBugs.find(b=>b.id===selectedBugId)||visibleBugs[0];
- const counts=Object.fromEntries(lanes.map(lane=>[lane,tasks.filter(t=>t.status===lane).length]));
- const filteredTasks=tasks.filter(t=>(t.title+' '+t.displayId+' '+t.description).toLowerCase().includes(search.toLowerCase()));
+ const topLevelTasks=tasks.filter(task=>!task.parentId);
+ const childrenOf=(task:TaskRecord)=>tasks.filter(child=>child.parentId===task.id);
+ const matchesSearch=(task:TaskRecord)=>(task.title+' '+task.displayId+' '+task.description).toLowerCase().includes(search.toLowerCase());
+ const counts=Object.fromEntries(lanes.map(lane=>[lane,topLevelTasks.filter(t=>t.status===lane).length]));
+ const filteredTasks=topLevelTasks.filter(task=>matchesSearch(task)||childrenOf(task).some(matchesSearch));
  const orderedTasks=lanes.flatMap(lane=>filteredTasks.filter(task=>task.status===lane));
  const taskPosition=orderedTasks.findIndex(task=>task.id===selectedTask);
  const hasUnsavedTaskEdits=Boolean(activeTask&&editingTask&&(['title','description','acceptanceCriteria','verificationStep'] as const).some(field=>taskEdit[field]!==activeTask[field]));
+ const hasUnsavedInspectorEdits=hasUnsavedTaskEdits||hasAuxiliaryEdits;
+ const resetInspectorDrafts=()=>{inspectorDrafts.current.clear();setHasAuxiliaryEdits(false);};
  const currentSnapshot=useCallback(async(id:string)=>{
   const d=await get<Snapshot>('snapshot/'+encodeURIComponent(id));
-  setSnapshot(d);
+  if(projectIdRef.current===id)setSnapshot(d);
  },[]);
  const refreshProjects=useCallback(async()=>{
   const d=await get<Project[]>('projects');setProjects(d);
@@ -112,14 +130,14 @@ export default function App(){
   const d=await get<Detail>('tasks/'+encodeURIComponent(id));
   if(requestId!==taskRequestRef.current||currentTaskIdRef.current!==id)return;
   setDetail(d);
-  setTaskEdit({title:d.task.title,description:d.task.description,acceptanceCriteria:d.task.acceptanceCriteria,verificationStep:d.task.verificationStep});
+  setTaskEdit(previous=>editingTaskRef.current?previous:{title:d.task.title,description:d.task.description,acceptanceCriteria:d.task.acceptanceCriteria,verificationStep:d.task.verificationStep});
  },[]);
  useEffect(()=>{refreshProjects().catch(e=>setNotice({text:String(e),error:true}));},[refreshProjects]);
  useEffect(()=>{
   if(!projectId)return;
   localStorage.setItem('flowly-project',projectId);
-  taskRequestRef.current++;currentTaskIdRef.current='';setEditingTask(false);
-  setSelectedTask('');setSelectedPreview('');setSelectedCase('');setDetail(null);
+  taskRequestRef.current++;currentTaskIdRef.current='';setEditingTask(false);resetInspectorDrafts();
+  setSnapshot(null);setSelectedTask('');setSelectedPreview('');setSelectedCase('');setDetail(null);
   refresh().catch(e=>setNotice({text:String(e),error:true}));
   const timer=setInterval(()=>{if(document.visibilityState==='visible')void refresh().catch(()=>{});},6000);
   return ()=>clearInterval(timer);
@@ -138,27 +156,60 @@ export default function App(){
  const notify=(text:string,error=false)=>setNotice({text,error});
  const doAction=async<T=unknown>(operation:string,body:Record<string,unknown>={}):Promise<T|undefined>=>{
   if(busy)return;
+  const draftGroup=document.activeElement?.closest('form,.engineering-panel,.bug-entry,.detail-stack > .panel');
   setBusy(true);
   try{
    const response=await op<T>(operation,body);
    await refresh();
    if(currentTaskIdRef.current)await loadDetail(currentTaskIdRef.current);
+   // A size/status action must not mark an unrelated report draft as saved.
+   const savedLabels:Record<string,RegExp>={
+    'engineering.size':/^Delivery size/,
+    'engineering.decision.report':/^(Requirements|Current architecture|Alternatives \(|Impact analysis|Recommendation)/,
+    'engineering.decision.resolve':/^(Selected approach|Reason)/,
+    'engineering.implementation.report':/^(Requirements summary|Changed files|No changes reason|Technical decisions|Alternatives and trade-offs|Verification evidence|Deviations|Material approach|Git commit hashes)/,
+    'engineering.parallel.plan':/^Execution plan/,
+    'engineering.parallel.status':/^Completion evidence/,
+    'task.tests':/^Verification evidence/,
+    'task.review':/^Workflow \/ review reason/,
+   };
+   if(draftGroup)for(const [key,draft] of inspectorDrafts.current){
+    const label=draft.element.closest('label')?.textContent?.trim()||'';
+    if(draftGroup.contains(draft.element)&&(draftGroup.matches('form')||savedLabels[operation]?.test(label)))inspectorDrafts.current.delete(key);
+   }
+   setHasAuxiliaryEdits([...inspectorDrafts.current.values()].some(draft=>draftControlValue(draft.element)!==draft.initial));
    notify('Saved successfully');return response;
   }catch(error){notify(error instanceof Error?error.message:String(error),true);}
   finally{setBusy(false);}
  };
- const closeTask=():boolean=>{
+ const discardTaskEdits=()=>{
   if(hasUnsavedTaskEdits&&!window.confirm('Discard unsaved task changes?'))return false;
+  setEditingTask(false);
+  if(activeTask)setTaskEdit({title:activeTask.title,description:activeTask.description,acceptanceCriteria:activeTask.acceptanceCriteria,verificationStep:activeTask.verificationStep});
+  return true;
+ };
+ const switchInspectorTab=(tab:InspectorTab,focusPanel=false)=>{
+  if(busy||tab===inspectorTab)return;
+  if(!discardTaskEdits())return;
+  setInspectorTab(tab);
+  requestAnimationFrame(()=>{const panel=document.getElementById('inspector-panel-'+inspectorTabs.indexOf(tab));if(panel)panel.scrollTop=0;if(focusPanel)panel?.focus();});
+ };
+ const closeTask=():boolean=>{
+  if(busy)return false;
+  if(hasUnsavedInspectorEdits&&!window.confirm('Discard unsaved task changes?'))return false;
+  resetInspectorDrafts();
   taskRequestRef.current++;currentTaskIdRef.current='';
   setSelectedTask('');setDetail(null);setEditingTask(false);setInspectorFullscreen(false);
   requestAnimationFrame(()=>taskReturnFocusRef.current?.focus());
   return true;
  };
  const chooseTask=(id:string)=>{
-  if(id===selectedTask)return;
-  if(hasUnsavedTaskEdits&&!window.confirm('Discard unsaved task changes?'))return;
+  if(busy||id===selectedTask)return;
+  if(hasUnsavedInspectorEdits&&!window.confirm('Discard unsaved task changes?'))return;
+  resetInspectorDrafts();
   if(!selectedTask)taskReturnFocusRef.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
   taskRequestRef.current++;currentTaskIdRef.current=id;
+  setNotice(null);setInspectorTab('Overview');setProof('');setTaskReason('');setCheckText('');setBugText('');
   setSelectedTask(id);setDetail(null);setEditingTask(false);setSelectedBugId('');setBugFilter('open');
  };
  const choosePreview=(id:string)=>{
@@ -174,10 +225,24 @@ export default function App(){
  },[Boolean(selectedTask)]);
  useEffect(()=>{
   if(!selectedTask)return;
-  const keyHandler=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();closeTask();}};
+  const keyHandler=(event:KeyboardEvent)=>{
+   if(event.defaultPrevented)return;
+   if(event.key==='Escape'){event.preventDefault();closeTask();return;}
+   if(event.key!=='Tab')return;
+   const dialog=taskDialogRef.current;if(!dialog)return;
+   const focusables=Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),textarea:not(:disabled),select:not(:disabled),summary,[tabindex="0"]'))
+    .filter(element=>element.getClientRects().length>0&&element.tabIndex!==-1);
+   const target=event.shiftKey?focusables.at(-1):focusables[0];
+   if(target&&(document.activeElement===dialog||document.activeElement===(event.shiftKey?focusables[0]:focusables.at(-1)))){event.preventDefault();target.focus();}
+  };
   window.addEventListener('keydown',keyHandler);
   return ()=>window.removeEventListener('keydown',keyHandler);
- },[selectedTask,hasUnsavedTaskEdits]);
+ },[selectedTask,hasUnsavedInspectorEdits,busy]);
+ useEffect(()=>{
+  if(!hasUnsavedInspectorEdits)return;
+  const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};
+  window.addEventListener('beforeunload',warn);return ()=>window.removeEventListener('beforeunload',warn);
+ },[hasUnsavedInspectorEdits]);
 
  const createProject=async(e:FormEvent)=>{
   e.preventDefault();setBusy(true);
@@ -238,7 +303,7 @@ export default function App(){
 
  const recent=snapshot?.activity||[];
  const jobs=snapshot?.jobs||[];
- const attention=tasks.filter(t=>t.status==='ready-for-review'||t.status==='in-progress'&&
+ const attention=topLevelTasks.filter(t=>t.status==='ready-for-review'||t.status==='in-progress'&&
   cases.some(c=>c.taskId===t.id&&c.required&&!['PASS','WAIVED'].includes(c.verdict||''))).slice(0,6);
  useEffect(()=>{
   const target=draft?.screens?.[screenIndex];
@@ -247,18 +312,18 @@ export default function App(){
  const screens=draft?.screens||[];
  const visibleScreenshots=deletedShown?historyImages.filter(s=>s.status==='deleted'):(snapshot?.screenshots||[]);
  const menuName:Record<Page,string>={overview:'Overview',board:'Task Board',preview:'Preview & Visual QA',skills:'Skill Engine',settings:'Settings'};
- return <div className="flowly-app">
+ return <div className="flowly-app"><ThemeSelectEnhancer/>
   <aside className="sidebar">
    <div className="brand"><div className="brand-mark"><span/><span/><span/><span/></div><strong>flowly</strong></div>
    <div className="brand-sub">LOCAL WORKSPACE <span>V1</span></div>
    <label className="workspace-selector"><span className="workspace-icon">F</span><span className="workspace-copy"><small>ACTIVE PROJECT</small>
-    <select value={projectId} onChange={e=>setProjectId(e.target.value)} aria-label="Select project">
+    <select value={projectId} onChange={e=>{if(!selectedTask||closeTask())setProjectId(e.target.value);}} aria-label="Select project">
      {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
     </select></span><ChevronDown size={15}/></label>
    <span className="nav-eyebrow">WORKSPACE</span>
    <nav className="nav-list" aria-label="Main navigation">
     {navList.map(([key,Icon])=><button key={key} type="button" className={'nav-btn'+(page===key?' is-active':'')} onClick={()=>setPage(key)}>
-     <Icon size={18}/><span>{menuName[key]}</span>{key==='board'&&<em>{tasks.length}</em>}
+     <Icon size={18}/><span>{menuName[key]}</span>{key==='board'&&<em>{topLevelTasks.length}</em>}
     </button>)}
    </nav>
    <span className="nav-eyebrow section-space">PREFERENCES</span>
@@ -276,14 +341,14 @@ export default function App(){
      <Pill tone="green">LOCAL</Pill>
     </div>
    </header>
-   {notice&&<div className={'toast'+(notice.error?' error':'')} role="status"><span>{notice.text}</span><button title="Dismiss" onClick={()=>setNotice(null)}><X size={15}/></button></div>}
+   {notice&&!selectedTask&&<div className={'toast'+(notice.error?' error':'')} role={notice.error?'alert':'status'}><span>{notice.text}</span><button title="Dismiss" onClick={()=>setNotice(null)}><X size={15}/></button></div>}
    <main className="main-content">
     {page==='skills'&&<SkillAdmin projectId={projectId}/>}
     {page==='overview'&&<>
      <header className="page-heading"><div><div className="eyebrow">WORKSPACE PULSE / LIVE DATA</div><h1>Keep every delivery in view<span className="dot">.</span></h1><p>Tasks, agent actions and quality gates in one place.</p></div>
      <button className="outline-button" onClick={()=>void refresh()}><RefreshCw size={15}/> Refresh</button></header>
      {project?<><section className="stat-grid">
-      {([['Tasks',tasks.filter(t=>t.status!=='done').length,'5 workflow lanes',FolderKanban],
+      {([['Tasks',topLevelTasks.filter(t=>t.status!=='done').length,'Top-level open tasks and bugs',FolderKanban],
         ['In progress',counts['in-progress']||0,'Work currently active',Activity],
         ['Ready for review',counts['ready-for-review']||0,'Awaiting review or QA',Bell],
         ['QA Passed',cases.filter(c=>c.verdict==='PASS').length,'of '+cases.length+' current cases',ShieldCheck]
@@ -291,9 +356,9 @@ export default function App(){
        <div><span>{String(title)}</span><Icon size={20}/></div><strong>{String(count)}</strong><small>{String(sub)}</small></button>)}
      </section>
      <div className="overview-grid">
-      <section className="panel"><header className="panel-head"><div><div className="mini-eyebrow">DELIVERY</div><h2>Workflow overview</h2><p>Current task distribution</p></div></header>
+      <section className="panel"><header className="panel-head"><div><div className="mini-eyebrow">DELIVERY</div><h2>Workflow overview</h2><p>Top-level tasks and bugs</p></div></header>
        <div className="stage-bars">{lanes.map(lane=><button key={lane} className="stage-row" onClick={()=>setPage('board')}><span>{humanStatus(lane)}</span>
-       <div className="stage-track"><i style={{width:Math.max(1,(counts[lane]||0)/(tasks.length||1)*100)+'%'}}/></div><strong>{counts[lane]||0}</strong></button>)}</div></section>
+       <div className="stage-track"><i style={{width:Math.max(1,(counts[lane]||0)/(topLevelTasks.length||1)*100)+'%'}}/></div><strong>{counts[lane]||0}</strong></button>)}</div></section>
       <section className="panel"><header className="panel-head"><div><div className="mini-eyebrow">PRIORITIES</div><h2>Needs attention</h2><p>Review and QA blockers</p></div><Pill tone="amber">{attention.length}</Pill></header>
        <div className="attention-list">{attention.length?attention.map(t=><button className="attention-row" key={t.id} onClick={()=>chooseTask(t.id)}>
         <AlertCircle size={19}/><span><strong>{t.title}</strong><small>{t.displayId} · {humanStatus(t.status)}</small></span><ArrowRight size={15}/></button>):
@@ -319,7 +384,7 @@ export default function App(){
      </>:<Empty title="No project selected" body="Create a local workspace to start tracking tasks."/>}
     </>}
     {page==='board'&&<>
-     <header className="page-heading"><div><div className="eyebrow">DELIVERY WORKFLOW</div><h1>Task Board<span className="dot">.</span></h1><p>Five lanes with audit-backed transitions and explicit Done gates.</p></div>
+     <header className="page-heading"><div><div className="eyebrow">DELIVERY WORKFLOW</div><h1>Task Board<span className="dot">.</span></h1><p>Top-level tasks and bugs. Subtasks stay with their parent; counts include all top-level issues.</p></div>
       <button className="primary-button" onClick={()=>document.getElementById('new-task-title')?.focus()}><Plus size={16}/> New task</button></header>
      <form className="quick-create" onSubmit={createTask}><input id="new-task-title" placeholder="New task title" value={taskTitle} onChange={e=>setTaskTitle(e.target.value)} required/>
       <input placeholder="Optional description" value={taskDescription} onChange={e=>setTaskDescription(e.target.value)}/><button className="primary-button" disabled={!projectId||busy}>Create</button></form>
@@ -328,10 +393,11 @@ export default function App(){
       <header><span className={'lane-indicator lane-'+lane}/><h2>{humanStatus(lane)}</h2><em>{counts[lane]||0}</em></header>
       <div className="lane-items">{filteredTasks.filter(t=>t.status===lane).map(t=><button draggable key={t.id}
        onDragStart={e=>e.dataTransfer.setData('text/plain',t.id)} className="board-task" onClick={()=>chooseTask(t.id)}>
-       <div className="task-card-overline"><span>{t.displayId}</span><Pill tone={t.priority==='high'?'red':t.priority==='medium'?'amber':'neutral'}>{t.priority}</Pill></div>
-       <strong>{t.title}</strong>{t.description&&<p>{t.description}</p>}
+       <div className="task-card-overline"><span>{t.displayId}</span><IssueKind task={t}/><Pill tone={t.priority==='high'?'red':t.priority==='medium'?'amber':'neutral'}>{t.priority}</Pill></div>
+       <strong>{t.title}</strong>{search&&!matchesSearch(t)&&<small className="child-search-match">Matching subtask: {childrenOf(t).filter(matchesSearch).map(child=>child.displayId).join(', ')}</small>}{t.description&&<p>{t.description}</p>}
+       {childrenOf(t).some(child=>child.status!=='done')&&<small className="child-blocker">{childrenOf(t).filter(child=>child.status!=='done').length} unfinished subtasks block Done</small>}
        <div className="task-card-footer"><span><ListChecks size={13}/> {t.checklist.filter(i=>i.done).length}/{t.checklist.length}</span>
-        {t.childIds.length>0&&<span><FolderKanban size={13}/> {t.childIds.length} subtasks</span>}
+        {childrenOf(t).length>0&&<span><GitBranch size={13}/> {childrenOf(t).filter(child=>child.status==='done').length}/{childrenOf(t).length} subtasks done</span>}
         <span>{t.type==='bug'?'BUG':t.reviewMode==='auto'?'AUTO REVIEW':'REVIEW'}</span>
        </div></button>)}{filteredTasks.filter(t=>t.status===lane).length===0&&<div className="lane-empty">No tasks</div>}</div>
      </section>)}</div></div>
@@ -339,25 +405,26 @@ export default function App(){
     {selectedTask&&<div className="task-inspector-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)closeTask();}}>
      <section ref={taskDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={activeTask?'task-inspector-title':undefined}
       className={'task-inspector panel'+(inspectorFullscreen?' is-fullscreen':'')}
-      onKeyDown={e=>{
-       if(e.key!=='Tab')return;
-       const focusables=Array.from(e.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),textarea:not(:disabled),select:not(:disabled),summary'))
-        .filter(element=>element.getClientRects().length>0);
-       if(!focusables.length)return;
-       if(e.shiftKey&&document.activeElement===focusables[0]){e.preventDefault();focusables[focusables.length-1]!.focus();}
-       else if(!e.shiftKey&&document.activeElement===focusables[focusables.length-1]){e.preventDefault();focusables[0]!.focus();}
-      }}>
+      onFocusCapture={e=>{
+       const element=e.target;if(!(element instanceof HTMLInputElement||element instanceof HTMLTextAreaElement||element instanceof HTMLSelectElement)||element.closest('.task-editor'))return;
+       if(element instanceof HTMLInputElement&&(element.type==='file'||element.type==='checkbox'&&!element.closest('.engineering-panel')))return;
+       if(element instanceof HTMLSelectElement&&!element.closest('.engineering-panel'))return;
+       if(!inspectorDrafts.current.has(element))inspectorDrafts.current.set(element,{element,initial:draftControlValue(element)});
+      }}
+      onChangeCapture={()=>setHasAuxiliaryEdits([...inspectorDrafts.current.values()].some(draft=>draftControlValue(draft.element)!==draft.initial))}
+      >
       {!activeTask?<div className="task-loading">Loading task details…</div>:<>
        <header className="task-inspector-header">
         <div className="task-inspector-title">
-         <div className="task-inspector-meta"><span className="task-id">{activeTask.displayId}</span><Pill tone={activeTask.status==='done'?'green':'blue'}>{humanStatus(activeTask.status)}</Pill><Pill>{activeTask.type}</Pill></div>
+         <div className="task-inspector-meta"><span className="task-id">{activeTask.displayId}</span><Pill tone={activeTask.status==='done'?'green':'blue'}>{humanStatus(activeTask.status)}</Pill><IssueKind task={activeTask}/></div>
+         {activeTask.parentId&&<nav className="task-parent-breadcrumb" aria-label="Issue hierarchy"><button type="button" className="text-button" disabled={busy} onClick={()=>chooseTask(activeTask.parentId!)}>Parent: {tasks.find(task=>task.id===activeTask.parentId)?.displayId||activeTask.parentId}</button><span aria-hidden="true">?</span><span>{issueKind(activeTask)}: {activeTask.displayId}</span></nav>}
          <h2 id="task-inspector-title">{activeTask.title}</h2>
          <small>Updated <Stamp value={activeTask.updatedAt}/></small>
         </div>
         <div className="task-inspector-actions">
          {activeTask.status!=='done'&&<select aria-label="Change task lane" value={activeTask.status} disabled={busy} onChange={e=>statusSelect(activeTask.id,e.target.value)}>
           {lanes.map(lane=><option value={lane} key={lane}>{humanStatus(lane)}</option>)}</select>}
-         {!editingTask&&activeTask.status!=='done'&&<button className="outline-button" onClick={()=>setEditingTask(true)}>Edit</button>}
+         {!editingTask&&activeTask.status!=='done'&&<button className="outline-button" disabled={busy} onClick={()=>{setInspectorTab('Overview');setEditingTask(true);}}>Edit</button>}
          <div className="task-pager" aria-label="Browse tasks">
           <button className="icon-button" aria-label="Previous task" title="Previous task" disabled={taskPosition<=0} onClick={()=>chooseTask(orderedTasks[taskPosition-1]!.id)}><ArrowLeft size={16}/></button>
           <span>{taskPosition>=0?taskPosition+1:0} / {orderedTasks.length}</span>
@@ -367,8 +434,19 @@ export default function App(){
          <button className="icon-button" title="Close task details" aria-label="Close task details" onClick={closeTask}><X size={19}/></button>
         </div>
        </header>
-       <div className="task-inspector-scroll">
-     <div className="detail-grid"><section className="panel padded"><div className="mini-eyebrow">TASK INFORMATION</div><h2>Scope and acceptance</h2>
+       <div className="inspector-tabs" role="tablist" aria-label="Task detail sections">
+        {inspectorTabs.map((tab,index)=><button key={tab} type="button" role="tab" id={'inspector-tab-'+index}
+         aria-selected={inspectorTab===tab} aria-controls={'inspector-panel-'+index} tabIndex={inspectorTab===tab?0:-1} aria-disabled={busy}
+         onClick={()=>switchInspectorTab(tab,true)} onKeyDown={e=>{
+          const next=e.key==='Home'?0:e.key==='End'?inspectorTabs.length-1:e.key==='ArrowRight'?(index+1)%inspectorTabs.length:e.key==='ArrowLeft'?(index+inspectorTabs.length-1)%inspectorTabs.length:-1;
+          if(next<0)return;e.preventDefault();if(busy)return;
+          if(!discardTaskEdits())return;
+          setInspectorTab(inspectorTabs[next]!);document.getElementById('inspector-tab-'+next)?.focus();
+         }}>{tab}</button>)}
+       </div>
+       {notice&&<div className={'inspector-notice'+(notice.error?' error':'')} role={notice.error?'alert':'status'}><span>{notice.text}</span><button type="button" className="icon-button" aria-label="Dismiss task notice" onClick={()=>setNotice(null)}><X size={15}/></button></div>}
+       <div className="task-inspector-scroll" role="tabpanel" id="inspector-panel-0" aria-labelledby="inspector-tab-0" tabIndex={0} hidden={inspectorTab!==inspectorTabs[0]}>
+<section className="panel padded"><div className="mini-eyebrow">TASK INFORMATION</div><h2>Scope and acceptance</h2><p className="muted">Done readiness: {detail?detail.blockers.length?detail.blockers.length+' outstanding gates':'All evaluated gates satisfied':'Loading gates...'}</p>
       {editingTask?<div className="task-editor">
        <label>Title<input value={taskEdit.title} onChange={e=>setTaskEdit({...taskEdit,title:e.target.value})}/></label>
        <label>Description (Markdown)<textarea className="task-description-editor" rows={12} value={taskEdit.description} onChange={e=>setTaskEdit({...taskEdit,description:e.target.value})}/></label>
@@ -380,10 +458,38 @@ export default function App(){
        {activeTask.verificationStep&&<div className="task-read-section"><h3>Verification steps</h3><TaskMarkdown content={activeTask.verificationStep}/></div>}
       </div>}
 </section>
+       </div>
+       <div className="task-inspector-scroll" role="tabpanel" id="inspector-panel-1" aria-labelledby="inspector-tab-1" tabIndex={0} hidden={inspectorTab!==inspectorTabs[1]}>
+     <div className="task-secondary-sections">
+      {(['decision','parallel','implementation'] as const).map(mode=><details className="task-disclosure" key={mode}>
+       <summary>{mode==='decision'?'Alternatives & decision':mode==='parallel'?'Parallel workstreams':'Implementation report'} <ChevronDown size={16}/></summary>
+       <EngineeringPanel key={activeTask.id+'-'+mode} task={activeTask} mode={mode} onAction={(name,body)=>doAction(name,body)} busy={busy}/>
+      </details>)}
+     </div>
+     <details className="task-disclosure" open><summary>Checklist <ChevronDown size={16}/></summary><section className="panel padded"><div className="section-row"><div><div className="mini-eyebrow">LIGHTWEIGHT STEPS</div><h2>Checklist</h2></div>
+      <Pill tone="blue">{activeTask.checklist.filter(c=>c.done).length} / {activeTask.checklist.length}</Pill></div>
+      {activeTask.checklist.map((item,index)=><div className="checklist-row" key={item.id}><input aria-label={'Complete '+item.text} type="checkbox" checked={item.done} disabled={activeTask.status==='done'}
+       onChange={e=>void doAction('task.checklist',{id:activeTask.id,action:'toggle',itemId:item.id,done:e.target.checked})}/>
+       <span className={item.done?'crossed':''}>{item.text}</span>{activeTask.status!=='done'&&<>
+       <button title="Move up" disabled={index===0||busy} onClick={()=>void doAction('task.checklist',{id:activeTask.id,action:'reorder',itemId:item.id,index:index-1})}><ArrowUp size={14}/></button>
+       <button title="Move down" disabled={index===activeTask.checklist.length-1||busy} onClick={()=>void doAction('task.checklist',{id:activeTask.id,action:'reorder',itemId:item.id,index:index+1})}><ArrowDown size={14}/></button>
+       <button title="Remove" onClick={()=>void doAction('task.checklist',{id:activeTask.id,action:'remove',itemId:item.id})}><X size={14}/></button></>}</div>)}
+      {activeTask.status!=='done'&&<form className="row-form" onSubmit={e=>{e.preventDefault();void doAction('task.checklist',{id:activeTask.id,action:'add',text:checkText}).then(saved=>{if(saved)setCheckText('');});}}>
+       <input placeholder="Add checklist step" required value={checkText} onChange={e=>setCheckText(e.target.value)}/><button className="primary-button" disabled={busy}><Plus size={14}/> Add</button></form>}
+     </section></details>
+     <details className="task-disclosure" open><summary>Subtasks ({detail?.children.filter(child=>child.status==='done').length||0}/{detail?.children.length||0} done) <ChevronDown size={16}/></summary><section className="panel padded"><div className="mini-eyebrow">CHILD TASKS</div><h2>Subtasks</h2>
+      {(detail?.children||[]).map(t=><button className="link-row" key={t.id} onClick={()=>chooseTask(t.id)}><IssueKind task={t}/><span>{t.displayId}</span><strong>{t.title}</strong><Pill>{humanStatus(t.status)}</Pill><small>{t.checklist.filter(item=>item.done).length}/{t.checklist.length} checklist</small><ArrowRight size={14}/></button>)}
+      {!detail?.children.length&&<Empty title="No subtasks" body="Subtasks have independent workflow and completion gates."/>}
+      {activeTask.status!=='done'&&!activeTask.parentId&&<form className="row-form" onSubmit={e=>{e.preventDefault();void doAction('task.subtask',{projectId,parentId:activeTask.id,title:taskTitle}).then(saved=>{if(saved)setTaskTitle('');});}}>
+       <input required placeholder="New subtask" value={taskTitle} onChange={e=>setTaskTitle(e.target.value)}/><button className="primary-button" disabled={busy}><Plus size={15}/> Add</button></form>}
+     </section></details>
+
+       </div>
+       <div className="task-inspector-scroll" role="tabpanel" id="inspector-panel-2" aria-labelledby="inspector-tab-2" tabIndex={0} hidden={inspectorTab!==inspectorTabs[2]}>
       <section className="detail-stack">
        <div className="panel padded"><div className="mini-eyebrow">QUALITY GATES</div><h2>Done readiness</h2>
         {detail?.blockers.length?detail.blockers.map(block=><div className="blocker" key={block}><AlertCircle size={14}/>{humanStatus(block.replaceAll('_',' ').toLowerCase())}</div>):
-         <div className="good-note"><CheckCircle2 size={16}/> All currently evaluated gates satisfied</div>}
+         <div className="good-note"><CheckCircle2 size={16}/>{detail?'All currently evaluated gates satisfied':'Loading readiness gates...'}</div>}
         <div className="field-row"><strong>Risk assessment</strong><Pill tone={detail?.risk==='HIGH'?'red':detail?.risk==='MEDIUM'?'amber':'green'}>{detail?.risk||'MEDIUM'}</Pill></div>
         <div className="field-row"><strong>Review policy</strong><span>{activeTask.reviewMode}</span></div>
         <div className="field-row"><strong>Tests</strong><span>{activeTask.testsPassed?'Passed':'Not passed'}</span></div>
@@ -405,29 +511,7 @@ export default function App(){
         {previews.filter(p=>p.taskId===activeTask.id).map(p=><button className="link-row" key={p.id} onClick={()=>choosePreview(p.id)}><Monitor size={15}/>{p.name}<ArrowRight size={14}/></button>)}
         {!previews.some(p=>p.taskId===activeTask.id)&&<p className="muted">No preview linked yet.</p>}
        </div>
-      </section></div>     <div className="task-secondary-sections">
-      {(['decision','parallel','implementation'] as const).map(mode=><details className="task-disclosure" key={mode}>
-       <summary>{mode==='decision'?'Alternatives & decision':mode==='parallel'?'Parallel workstreams':'Implementation report'} <ChevronDown size={16}/></summary>
-       <EngineeringPanel key={activeTask.id+'-'+mode} task={activeTask} mode={mode} onAction={(name,body)=>doAction(name,body)} busy={busy}/>
-      </details>)}
-     </div>
-     <details className="task-disclosure" open><summary>Checklist <ChevronDown size={16}/></summary><section className="panel padded"><div className="section-row"><div><div className="mini-eyebrow">LIGHTWEIGHT STEPS</div><h2>Checklist</h2></div>
-      <Pill tone="blue">{activeTask.checklist.filter(c=>c.done).length} / {activeTask.checklist.length}</Pill></div>
-      {activeTask.checklist.map((item,index)=><div className="checklist-row" key={item.id}><input aria-label={'Complete '+item.text} type="checkbox" checked={item.done} disabled={activeTask.status==='done'}
-       onChange={e=>void doAction('task.checklist',{id:activeTask.id,action:'toggle',itemId:item.id,done:e.target.checked})}/>
-       <span className={item.done?'crossed':''}>{item.text}</span>{activeTask.status!=='done'&&<>
-       <button title="Move up" disabled={index===0||busy} onClick={()=>void doAction('task.checklist',{id:activeTask.id,action:'reorder',itemId:item.id,index:index-1})}><ArrowUp size={14}/></button>
-       <button title="Move down" disabled={index===activeTask.checklist.length-1||busy} onClick={()=>void doAction('task.checklist',{id:activeTask.id,action:'reorder',itemId:item.id,index:index+1})}><ArrowDown size={14}/></button>
-       <button title="Remove" onClick={()=>void doAction('task.checklist',{id:activeTask.id,action:'remove',itemId:item.id})}><X size={14}/></button></>}</div>)}
-      {activeTask.status!=='done'&&<form className="row-form" onSubmit={e=>{e.preventDefault();void doAction('task.checklist',{id:activeTask.id,action:'add',text:checkText}).then(()=>setCheckText(''));}}>
-       <input placeholder="Add checklist step" required value={checkText} onChange={e=>setCheckText(e.target.value)}/><button className="primary-button" disabled={busy}><Plus size={14}/> Add</button></form>}
-     </section></details>
-     <details className="task-disclosure"><summary>Subtasks <ChevronDown size={16}/></summary><section className="panel padded"><div className="mini-eyebrow">CHILD TASKS</div><h2>Subtasks</h2>
-      {(detail?.children||[]).map(t=><button className="link-row" key={t.id} onClick={()=>chooseTask(t.id)}><span>{t.displayId}</span><strong>{t.title}</strong><Pill>{humanStatus(t.status)}</Pill><ArrowRight size={14}/></button>)}
-      {!detail?.children.length&&<Empty title="No subtasks" body="Subtasks have independent workflow and completion gates."/>}
-      {activeTask.status!=='done'&&!activeTask.parentId&&<form className="row-form" onSubmit={e=>{e.preventDefault();void doAction('task.subtask',{projectId,parentId:activeTask.id,title:taskTitle}).then(()=>setTaskTitle(''));}}>
-       <input required placeholder="New subtask" value={taskTitle} onChange={e=>setTaskTitle(e.target.value)}/><button className="primary-button"><Plus size={15}/> Add</button></form>}
-     </section></details>
+      </section>
      <details className="task-disclosure"><summary>Bug threads <ChevronDown size={16}/></summary><section className="panel padded"><div className="section-row"><div className="mini-eyebrow">DEFECT TRACKING</div>
       <Pill tone={detail?.bugs.some(b=>b.status==='open')?'red':'green'}>{detail?.bugs.filter(b=>b.status==='open').length||0} unresolved</Pill></div>
       <h2>Bug threads</h2>
@@ -461,7 +545,10 @@ export default function App(){
        onInspect={()=>{if(closeTask()){setSelectedCase(c.id);setPage('preview');}}}
        onUpload={e=>void uploadCase(e,c)} onRequired={required=>void doAction('qa.required',{id:c.id,required})}/>)}
       {!taskCases.length&&<Empty title="No QA cases" body="Approve a Preview with explicit screen/state/viewport tuples."/>}</section></details>
-     <details className="task-disclosure"><summary>Activity history <ChevronDown size={16}/></summary><section className="panel padded"><div className="mini-eyebrow">IMMUTABLE EVENTS</div><h2>Task history</h2><ActivityList items={detail?.history||[]}/></section></details>
+
+       </div>
+       <div className="task-inspector-scroll" role="tabpanel" id="inspector-panel-3" aria-labelledby="inspector-tab-3" tabIndex={0} hidden={inspectorTab!==inspectorTabs[3]}>
+<section className="panel padded"><div className="mini-eyebrow">IMMUTABLE EVENTS</div><h2>Task history</h2><ActivityList items={[...(detail?.history||[])].sort((first,second)=>first.at.localeCompare(second.at))}/></section>
        </div>
        {editingTask&&<footer className="task-inspector-footer"><span>Markdown edits are saved only when you confirm.</span>
         <div className="action-wrap">
@@ -647,12 +734,12 @@ export default function App(){
   setDraft({...draft,screens:draft.screens.map((s,i)=>i===index?{...s,...patch}:s)});
  }
 }
-function ActivityList({items}:{items:Array<{id:string;action:string;actor:string;channel:string;at:string;taskId?:string;from?:string;to?:string}>}){
+function ActivityList({items}:{items:Array<{id:string;action:string;actor:string;channel:string;at:string;taskId?:string;from?:string;to?:string;reason?:string;evidence?:Record<string,unknown>}>}){
  if(!items.length)return <Empty title="No activity recorded" body="Task changes made by CLI or Web appear here."/>;
  return <div className="activity-list">{items.map(item=><div className="activity-row" key={item.id}>
   <span className="activity-icon"><Activity size={15}/></span>
   <div><strong>{humanStatus(item.action.replaceAll('.',' '))}</strong><small>{item.actor} · {item.channel}
-   {item.from&&item.to&&' · '+humanStatus(item.from)+' → '+humanStatus(item.to)}</small></div><Stamp value={item.at}/>
+   {item.from&&item.to&&' · '+humanStatus(item.from)+' → '+humanStatus(item.to)}</small>{item.reason&&<p>{item.reason}</p>}{item.evidence&&<details className="activity-evidence"><summary>Recorded evidence</summary><pre>{JSON.stringify(item.evidence,null,2)}</pre>{typeof item.evidence.evidenceId==='string'&&<a href={fileUrl(item.evidence.evidenceId)} target="_blank" rel="noopener noreferrer">Open screenshot evidence</a>}</details>}</div><Stamp value={item.at}/>
  </div>)}</div>;
 }
 function CaseRow({qa,evidence,onInspect,onUpload,onRequired}:{qa:QaCase;evidence?:Screenshot;onInspect:()=>void;
