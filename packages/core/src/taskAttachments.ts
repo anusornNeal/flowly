@@ -41,15 +41,28 @@ function validId(id:unknown,prefix:string):string {
 }
 function displayName(value:unknown,format:keyof typeof mimeByFormat):string {
  const name=requireText(value,'attachment name').normalize('NFC').split(/[\\/]/).pop()!
-  .replace(/[<>:"|?*\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g,'_').replace(/^[. ]+|[. ]+$/g,'').slice(0,160);
+  .replace(/[\ud800-\udfff]/gu,'_')
+  .replace(/[<>:"|?*\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g,'_').replace(/^[. ]+|[. ]+$/g,'');
  const extensions={png:['png'],jpeg:['jpg','jpeg'],webp:['webp']};
  const extension=name.includes('.')?name.split('.').pop()!.toLowerCase():undefined;
  if(extension&&!extensions[format].includes(extension))throw new DomainError('IMAGE_MIME_MISMATCH','Filename extension does not match decoded image');
- return name||'image.'+(format==='jpeg'?'jpg':format);
+ // Iterate code points so a boundary never splits a surrogate pair. Sanitize
+ // unpaired input surrogates too: this label is later URI-encoded for HTTP.
+ return Array.from(name).slice(0,160).join('')||'image.'+(format==='jpeg'?'jpg':format);
 }
 function magic(bytes:Buffer):keyof typeof mimeByFormat {
  if(bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) {
   if(!bytes.subarray(-12).equals(Buffer.from([0,0,0,0,73,69,78,68,174,66,96,130])))throw new DomainError('INVALID_IMAGE','PNG must end at IEND');
+  // libvips can report pages=1 for APNG. Inspect framed chunks rather than
+  // searching payload bytes, which could occur inside an ordinary IDAT.
+  for(let offset=8;offset<bytes.length;){
+   if(bytes.length-offset<12)throw new DomainError('INVALID_IMAGE','Invalid PNG chunk');
+   const length=bytes.readUInt32BE(offset),end=offset+12+length;
+   if(end>bytes.length)throw new DomainError('INVALID_IMAGE','Invalid PNG chunk length');
+   const type=bytes.toString('ascii',offset+4,offset+8);
+   if(['acTL','fcTL','fdAT'].includes(type))throw new DomainError('ANIMATED_IMAGE','Animated PNG attachments are not supported');
+   offset=end;
+  }
   return 'png';
  }
  if(bytes[0]===255&&bytes[1]===216&&bytes[2]===255){
@@ -186,10 +199,11 @@ export class TaskAttachments {
  async create(input:AttachmentCreateRequest,images:AttachmentImage[],actor:Actor):Promise<AttachmentCreateResult> {
   const taskInput=validateAttachmentTask(input?.task),key=this.key(input.idempotencyKey);
   this.tasks.project(taskInput.projectId);
-  if(taskInput.parentId)this.scope(taskInput.parentId,taskInput.projectId,true);
+  if(taskInput.parentId)this.scope(taskInput.parentId,taskInput.projectId);
   const hash=this.request(images,'create',taskInput);
   const previous=this.replay<AttachmentCreateResult>(taskInput.projectId,key,hash);
   if(previous)return {...previous,replayed:true};
+  if(taskInput.parentId)this.scope(taskInput.parentId,taskInput.projectId,true);
   const prepared:Prepared[]=[];for(const image of images)prepared.push(await prepare(image));
   return this.store.transactionImmediate(()=>{
    const previous=this.replay<AttachmentCreateResult>(taskInput.projectId,key,hash);

@@ -116,6 +116,12 @@ export class Tasks {
   });
  }
  transition(id:string,input:{to:Lane;reason?:string;forceDone?:boolean},actor:Actor){
+  // Lock before any gate reads. Attachment mutations use the same SQLite
+  // IMMEDIATE lock, including in other CLI processes. Keep this synchronous;
+  // nested store transactions use savepoints on this connection.
+  return this.store.transactionImmediate(()=>this.transitionLocked(id,input,actor));
+ }
+ private transitionLocked(id:string,input:{to:Lane;reason?:string;forceDone?:boolean},actor:Actor){
   const task=this.task(id);
   const to=member(input.to,lanes,'lane');
   const children=task.childIds.map(childId=>this.task(childId));

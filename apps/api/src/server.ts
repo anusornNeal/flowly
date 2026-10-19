@@ -131,7 +131,7 @@ export async function createServer(options:{root?:string}={}){
  server.post<{Reply:AttachmentEnvelope<AttachmentCreateResult>}>('/api/tasks/with-attachments',async(request,reply)=>{
   const {input,images}=await attachmentForm<AttachmentCreateRequest>(request,input=>{
    const task=validateAttachmentTask(input.task);domain.tasks.project(task.projectId);
-   if(task.parentId)domain.attachments.scope(task.parentId,task.projectId,true);
+   if(task.parentId)domain.attachments.scope(task.parentId,task.projectId);
   });
   const result=await domain.attachments.create(input,images,actor(request));
   return reply.code(result.replayed?200:201).send({ok:true,result});
