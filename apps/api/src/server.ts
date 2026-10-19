@@ -71,7 +71,8 @@ async function attachmentForm<T extends AttachmentCreateRequest|AttachmentAddReq
   const code=(error as {code?:string}).code;
   if(code==='FST_REQ_FILE_TOO_LARGE')throw new DomainError('IMAGE_TOO_LARGE','Image exceeds 25 MiB',413);
   if(code==='FST_FILES_LIMIT')throw new DomainError('ATTACHMENT_LIMIT','At most 10 images per task',409);
-  if(code==='FST_FIELDS_LIMIT'||code==='FST_PARTS_LIMIT')throw new DomainError('INVALID_ATTACHMENT_INPUT','Too many multipart fields or files');
+  if(code==='FST_FIELDS_LIMIT'||code==='FST_PARTS_LIMIT'||code==='ERR_STREAM_PREMATURE_CLOSE')
+   throw new DomainError('INVALID_ATTACHMENT_INPUT','Malformed multipart or too many fields');
   throw error;
  }
  if(!input)throw new DomainError('INVALID_ATTACHMENT_INPUT','JSON input is required');
