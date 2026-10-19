@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Activity, AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bell, Check, CheckCircle2, ChevronDown, CircleDashed,
  Bug, GitBranch, Clipboard, Code2, Eye, FileImage, FolderKanban, Grid2X2, History, Image, ListChecks, Monitor, MoreHorizontal,
  Maximize2, Minimize2, Plus, RefreshCw, Save, Search, Settings, ShieldCheck, Terminal, Trash2, Upload, WandSparkles, X } from 'lucide-react';
@@ -56,6 +56,7 @@ export default function App(){
  const [projectUrl,setProjectUrl]=useState('');
  const [taskTitle,setTaskTitle]=useState('');
  const [taskDescription,setTaskDescription]=useState('');
+ const quickCreateRequest=useRef<{payload:string;key:string}|undefined>(undefined);
  const [composer,setComposer]=useState<{kind:'task'|'subtask'|'bug';parentId?:string;taskId?:string;originTaskId?:string}|null>(null);
  const [composerValue,setComposerValue]=useState<TaskComposerValue>({title:'',description:'',priority:'medium',attachments:[]});
  const composerKey=useRef(crypto.randomUUID());
@@ -104,7 +105,8 @@ export default function App(){
  const tasks=snapshot?.tasks||[];
  const previews=snapshot?.previews||[];
  const cases=snapshot?.cases||[];
- const activeTask=detail?.task||tasks.find(t=>t.id===selectedTask);
+ const taskDetailReady=detail?.task.id===selectedTask;
+ const activeTask=(taskDetailReady?detail.task:undefined)||tasks.find(t=>t.id===selectedTask);
  const activePreview=previews.find(p=>p.id===selectedPreview);
  const activeCase=cases.find(c=>c.id===selectedCase);
  const caseImage=snapshot?.screenshots.find(s=>s.id===activeCase?.evidenceId);
@@ -236,9 +238,24 @@ export default function App(){
   if(!selectedTask)return;
   const oldOverflow=document.body.style.overflow;
   document.body.style.overflow='hidden';
-  taskDialogRef.current?.focus();
   return ()=>{document.body.style.overflow=oldOverflow;};
  },[Boolean(selectedTask)]);
+ // Task navigation can hide/unmount the confirmed link while keeping the modal
+ // open. Move focus after that DOM commit, for every task identity transition.
+ useLayoutEffect(()=>{
+  if(!selectedTask)return;
+  const dialog=taskDialogRef.current;
+  const panel=dialog?.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])');
+  (panel||dialog)?.focus({preventScroll:true});
+ },[selectedTask]);
+ useLayoutEffect(()=>{
+  if(!selectedTask||detail?.task.id!==selectedTask)return;
+  const dialog=taskDialogRef.current;
+  // A task absent from the snapshot initially renders only the loading shell.
+  if(dialog&&(document.activeElement===dialog||!dialog.contains(document.activeElement))){
+   dialog.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])')?.focus({preventScroll:true});
+  }
+ },[selectedTask,detail?.task.id]);
  useEffect(()=>{
   if(!selectedTask)return;
   const keyHandler=(event:KeyboardEvent)=>{
@@ -279,7 +296,9 @@ export default function App(){
     await addTaskAttachments(composer.taskId,{projectId,idempotencyKey:composerKey.current,altTexts:value.attachments.map(item=>item.altText)},value.attachments.map(item=>item.file));
    }else if(!composerResult.current){
     const task={projectId,title:value.title,description:value.description,priority:value.priority,type:composer.kind==='bug'?'bug' as const:'task' as const,...(composer.parentId?{parentId:composer.parentId}:{}),...(composer.originTaskId?{originTaskId:composer.originTaskId}:{})};
-    composerResult.current=value.attachments.length?(await createTaskWithAttachments({task,idempotencyKey:composerKey.current,altTexts:value.attachments.map(item=>item.altText)},value.attachments.map(item=>item.file))).task:await op<TaskRecord>('task.create',task);
+    composerResult.current=value.attachments.length
+     ?(await createTaskWithAttachments({task,idempotencyKey:composerKey.current,altTexts:value.attachments.map(item=>item.altText)},value.attachments.map(item=>item.file))).task
+     :(await op<{results:TaskRecord[]}>('task.batch',{projectId,idempotencyKey:composerKey.current,operations:[{operation:'task.create',input:task}]})).results[0];
    }
    setComposer(null);setTaskTitle('');setTaskDescription('');
    try{await refresh();if(currentTaskIdRef.current)await loadDetail(currentTaskIdRef.current);notify('Saved successfully');}
@@ -301,9 +320,12 @@ export default function App(){
   }catch(error){notify(String(error),true);}finally{setBusy(false);}
  };
  const createTask=async(e:FormEvent)=>{
-  e.preventDefault();if(!projectId)return;
-  const created=await doAction<TaskRecord>('task.create',{projectId,title:taskTitle,description:taskDescription});
-  if(created){setTaskTitle('');setTaskDescription('');}
+  e.preventDefault();if(!projectId||busy||!taskTitle.trim())return;
+  const task={projectId,title:taskTitle.trim(),description:taskDescription};
+  const payload=JSON.stringify(task);
+  if(quickCreateRequest.current?.payload!==payload)quickCreateRequest.current={payload,key:crypto.randomUUID()};
+  const created=await doAction('task.batch',{projectId,idempotencyKey:quickCreateRequest.current.key,operations:[{operation:'task.create',input:task}]});
+  if(created){quickCreateRequest.current=undefined;setTaskTitle('');setTaskDescription('');}
  };
  const uploadCase=async(e:ChangeEvent<HTMLInputElement>,qa:QaCase)=>{
   const file=e.currentTarget.files?.[0];if(!file)return;
@@ -473,7 +495,12 @@ export default function App(){
         <div className="task-inspector-actions">
          {activeTask.status!=='done'&&<select aria-label="Change task lane" value={activeTask.status} disabled={busy} onChange={e=>statusSelect(activeTask.id,e.target.value)}>
           {lanes.map(lane=><option value={lane} key={lane}>{humanStatus(lane)}</option>)}</select>}
-         {!editingTask&&activeTask.status!=='done'&&<button className="outline-button" disabled={busy} onClick={()=>{setInspectorTab('Overview');setEditingTask(true);}}>Edit</button>}
+         {!editingTask&&activeTask.status!=='done'&&<button className="outline-button" disabled={busy||!taskDetailReady} onClick={()=>{
+          if(!taskDetailReady)return;
+          const task=detail.task;
+          setTaskEdit({title:task.title,description:task.description,acceptanceCriteria:task.acceptanceCriteria,verificationStep:task.verificationStep});
+          setInspectorTab('Overview');setEditingTask(true);
+         }}>Edit</button>}
          <div className="task-pager" aria-label="Browse tasks">
           <button className="icon-button" aria-label="Previous task" title="Previous task" disabled={taskPosition<=0} onClick={()=>chooseTask(orderedTasks[taskPosition-1]!.id)}><ArrowLeft size={16}/></button>
           <span>{taskPosition>=0?taskPosition+1:0} / {orderedTasks.length}</span>
@@ -606,7 +633,10 @@ export default function App(){
        {editingTask&&<footer className="task-inspector-footer"><span>Markdown edits are saved only when you confirm.</span>
         <div className="action-wrap">
          <button className="outline-button" onClick={()=>{setEditingTask(false);setTaskEdit({title:activeTask.title,description:activeTask.description,acceptanceCriteria:activeTask.acceptanceCriteria,verificationStep:activeTask.verificationStep});}}>Cancel</button>
-         <button className="primary-button" disabled={busy||!taskEdit.title.trim()} onClick={async()=>{const saved=await doAction('task.update',{id:activeTask.id,...taskEdit});if(saved)setEditingTask(false);}}><Save size={15}/> Save changes</button>
+         <button className="primary-button" disabled={busy||!taskDetailReady||!taskEdit.title.trim()} onClick={async()=>{
+          if(!taskDetailReady||activeTask.id!==currentTaskIdRef.current)return;
+          const saved=await doAction('task.update',{id:activeTask.id,...taskEdit});if(saved)setEditingTask(false);
+         }}><Save size={15}/> Save changes</button>
         </div>
        </footer>}
       </>}
@@ -774,7 +804,17 @@ export default function App(){
   </div>
   {composer&&<TaskComposer open value={composerValue} kind={composer.kind} parentId={composer.parentId}
    mode={composer.taskId?'add':'create'} existingCount={composer.taskId?detail?.attachments.length||0:0} submitting={busy}
-   onChange={value=>{composerKey.current=crypto.randomUUID();composerResult.current=undefined;setComposerValue(value);}}
+   onChange={value=>{
+    const sameAttachments=value.attachments.length===composerValue.attachments.length&&value.attachments.every((item,index)=>{
+     const previous=composerValue.attachments[index];return previous?.file===item.file&&previous.altText===item.altText;
+    });
+    // Match the submitted payload: rejected files and title whitespace do not
+    // invalidate a replay key after an ambiguous network failure.
+    if(value.title.trim()!==composerValue.title.trim()||value.description!==composerValue.description||value.priority!==composerValue.priority||!sameAttachments){
+     composerKey.current=crypto.randomUUID();composerResult.current=undefined;
+    }
+    setComposerValue(value);
+   }}
    onSubmit={submitComposer} onCancel={cancelComposer} renderDescriptionPreview={markdown=><TaskMarkdown content={markdown}/>}/>}
   {showCreateProject&&<div className="modal-scrim" role="dialog" aria-modal="true" aria-labelledby="project-modal-title">
    <form className="modal panel" onSubmit={createProject}><div className="mini-eyebrow">FIRST WORKSPACE</div><h2 id="project-modal-title">Create a local project</h2>

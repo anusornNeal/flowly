@@ -75,7 +75,7 @@ export function TaskComposer({ open, value, kind = 'task', parentId, mode = 'cre
       else attachments.push({ id: crypto.randomUUID(), file, altText: '' });
     }
     setValidation(errors);
-    update({ attachments });
+    if (attachments.length !== value.attachments.length) update({ attachments });
   };
   const cancel = () => { if (!busy) onCancel(); };
   return <TaskMediaDialog className="task-media task-composer" aria-labelledby={`${id}-heading`}
