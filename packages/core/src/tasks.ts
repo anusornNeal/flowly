@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { LocalStore } from '../../db/src/store.js';
 import { assessRisk, attemptTransition, type Lane, type ReviewMode } from './workflow.js';
 import { engineeringBlockers, reportBlockers, decisionRequired } from './engineering.js';
-import type { Actor, BugThread, ChecklistItem, Project, ReviewerDecision, RiskFactors, TaskRecord, QaCase, Preview } from './models.js';
+import type { Actor, BugThread, ChecklistItem, Project, ReviewerDecision, RiskFactors, TaskRecord, QaCase, Preview, TaskAttachment } from './models.js';
+import { taskAttachmentDto } from './taskAttachments.js';
 import { DomainError, now, requireText } from './models.js';
 
 const lanes = ['backlog','todo','in-progress','ready-for-review','done'] as const;
@@ -218,6 +219,8 @@ export class Tasks {
   const children=task.childIds.map(childId=>this.task(childId));
   const cases=this.currentQa(task,this.store.list<QaCase>('qa',{taskId:id}));
   const linked=this.store.list<TaskRecord>('task',{projectId:task.projectId}).filter(t=>t.originTaskId===id);
-  return {task,children,bugs,cases,linked,blockers:this.blockers(id),risk:assessRisk(task),history:this.activity(task.projectId,id)};
+  const attachments=this.store.list<TaskAttachment>('taskAttachment',{projectId:task.projectId,taskId:id})
+   .filter(a=>!a.deletedAt).sort((a,b)=>a.sortOrder-b.sortOrder||a.id.localeCompare(b.id)).map(taskAttachmentDto);
+  return {task,attachments,children,bugs,cases,linked,blockers:this.blockers(id),risk:assessRisk(task),history:this.activity(task.projectId,id)};
  }
 }

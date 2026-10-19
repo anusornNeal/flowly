@@ -7,6 +7,9 @@ import { FlowlyApp, execute, capabilities } from '../../../packages/core/src/app
 import { JobManager } from '../../../packages/core/src/jobs.js';
 import { DomainError } from '../../../packages/core/src/models.js';
 import type { Actor, Screenshot } from '../../../packages/core/src/models.js';
+import { TASK_ATTACHMENT_LIMITS, validateAttachmentTask } from '../../../packages/core/src/taskAttachments.js';
+import type { AttachmentImage, AttachmentCreateRequest, AttachmentAddRequest, AttachmentCreateResult, AttachmentAddResult, AttachmentRemoveResult, AttachmentEnvelope } from '../../../packages/core/src/taskAttachments.js';
+import type { TaskAttachmentDto } from '../../../packages/core/src/models.js';
 
 const MAX_MANUAL_FILE=100*1024*1024;
 const MAX_EXTERNAL_FILE=25*1024*1024;
@@ -39,6 +42,41 @@ async function imageForm(request:FastifyRequest,limit:number) {
  }
  if(!binary)throw new DomainError('IMAGE_REQUIRED','Multipart file image is required');
  return {fields,binary};
+}
+async function attachmentForm<T extends AttachmentCreateRequest|AttachmentAddRequest>(request:FastifyRequest,validate:(input:T)=>void) {
+ let input:T|undefined;
+ const images:AttachmentImage[]=[];
+ try {
+  for await(const part of request.parts({limits:{files:10,fields:1,parts:12,fileSize:TASK_ATTACHMENT_LIMITS.maxBytes+1,fieldSize:128*1024}})){
+   if(part.type==='field'){
+    if(input||part.fieldname!=='input'||part.valueTruncated||typeof part.value!=='string')
+     throw new DomainError('INVALID_ATTACHMENT_INPUT','Send one complete JSON input field before files');
+    let value:unknown;
+    try{value=JSON.parse(part.value);}catch{throw new DomainError('INVALID_ATTACHMENT_INPUT','input must be valid JSON');}
+    if(!value||typeof value!=='object'||Array.isArray(value))throw new DomainError('INVALID_ATTACHMENT_INPUT','input must be an object');
+    input=value as T;
+    const allowed='task' in input?['task','idempotencyKey','altTexts']:['projectId','idempotencyKey','altTexts'];
+    if(Object.keys(input).some(key=>!allowed.includes(key))||typeof input.idempotencyKey!=='string'||!input.idempotencyKey.trim()||input.idempotencyKey.trim().length>180||
+     (input.altTexts!==undefined&&(!Array.isArray(input.altTexts)||input.altTexts.some(text=>typeof text!=='string'||text.length>2000))))
+     throw new DomainError('INVALID_ATTACHMENT_INPUT','Invalid input fields, altTexts or idempotencyKey');
+    validate(input); // Ownership checked before buffering/decoding any image.
+   }else {
+    if(!input||part.fieldname!=='files')throw new DomainError('INVALID_ATTACHMENT_INPUT','Send JSON input first, then binary files fields');
+    const data=await part.toBuffer();
+    if(data.length>TASK_ATTACHMENT_LIMITS.maxBytes)throw new DomainError('IMAGE_TOO_LARGE','Image exceeds 25 MiB',413);
+    images.push({data,name:part.filename,mime:part.mimetype,altText:input.altTexts?.[images.length]});
+   }
+  }
+ }catch(error){
+  const code=(error as {code?:string}).code;
+  if(code==='FST_REQ_FILE_TOO_LARGE')throw new DomainError('IMAGE_TOO_LARGE','Image exceeds 25 MiB',413);
+  if(code==='FST_FILES_LIMIT')throw new DomainError('ATTACHMENT_LIMIT','At most 10 images per task',409);
+  if(code==='FST_FIELDS_LIMIT'||code==='FST_PARTS_LIMIT')throw new DomainError('INVALID_ATTACHMENT_INPUT','Too many multipart fields or files');
+  throw error;
+ }
+ if(!input)throw new DomainError('INVALID_ATTACHMENT_INPUT','JSON input is required');
+ if(input.altTexts&&input.altTexts.length!==images.length)throw new DomainError('INVALID_ATTACHMENT_INPUT','altTexts must match files in order');
+ return {input,images};
 }
 export async function createServer(options:{root?:string}={}){
  const domain=new FlowlyApp(options.root);
@@ -89,6 +127,33 @@ export async function createServer(options:{root?:string}={}){
   return {ok:true,result:q.projectId?domain.tasks.listTasks(q.projectId):[]};
  });
  server.get('/api/tasks/:id',async(request)=>({ok:true,result:domain.tasks.taskDetail(params<{id:string}>(request).id)}));
+ server.post<{Reply:AttachmentEnvelope<AttachmentCreateResult>}>('/api/tasks/with-attachments',async(request,reply)=>{
+  const {input,images}=await attachmentForm<AttachmentCreateRequest>(request,input=>{
+   const task=validateAttachmentTask(input.task);domain.tasks.project(task.projectId);
+   if(task.parentId)domain.attachments.scope(task.parentId,task.projectId,true);
+  });
+  const result=await domain.attachments.create(input,images,actor(request));
+  return reply.code(result.replayed?200:201).send({ok:true,result});
+ });
+ server.post<{Params:{id:string};Reply:AttachmentEnvelope<AttachmentAddResult>}>('/api/tasks/:id/attachments',async(request,reply)=>{
+  const {input,images}=await attachmentForm<AttachmentAddRequest>(request,input=>domain.attachments.scope(request.params.id,input.projectId,true));
+  const result=await domain.attachments.add(request.params.id,input,images,actor(request));
+  return reply.code(result.replayed?200:201).send({ok:true,result});
+ });
+ server.get<{Params:{id:string};Querystring:{projectId:string};Reply:AttachmentEnvelope<TaskAttachmentDto[]>}>('/api/tasks/:id/attachments',async(request)=>
+  ({ok:true,result:domain.attachments.list(request.params.id,request.query.projectId)}));
+ server.delete<{Params:{id:string};Querystring:{projectId:string};Reply:AttachmentEnvelope<AttachmentRemoveResult>}>('/api/task-attachments/:id',async(request)=>
+  ({ok:true,result:domain.attachments.remove(request.params.id,request.query.projectId,actor(request))}));
+ for(const variant of ['file','thumbnail'] as const){
+  server.get<{Params:{id:string};Querystring:{projectId:string}}>('/api/task-attachments/:id/'+variant,async(request,reply)=>{
+   const result=domain.attachments.file(request.params.id,request.query.projectId,variant==='thumbnail');
+   return reply.type(result.mime).header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff')
+    .header('Content-Security-Policy',"default-src 'none'; sandbox")
+    .header('Cross-Origin-Resource-Policy','same-origin')
+    .header('Content-Disposition',"inline; filename=\"image\"; filename*=UTF-8''"+encodeURIComponent(result.name).replace(/['()*]/g,char=>'%'+char.charCodeAt(0).toString(16)))
+    .send(result.bytes);
+  });
+ }
  server.get('/api/qa/:id/baseline',async(request,reply)=>{
   const bytes=await domain.baseline(params<{id:string}>(request).id);
   return reply.header('Cache-Control','no-store').type('image/png').send(bytes);
@@ -104,6 +169,8 @@ export async function createServer(options:{root?:string}={}){
  });
  server.post('/api/operations/:name',async(request,reply)=>{
   const op=params<{name:string}>(request).name;
+  if(op==='task.create-with-attachments'||op==='task.attachment.add')
+   throw new DomainError('MULTIPART_REQUIRED','Use canonical task multipart routes; HTTP never accepts local image paths');
   if(op==='settings.token.reveal')reply.header('Cache-Control','no-store');
   if(op.startsWith('job.')){
    const body=(request.body||{}) as Record<string,any>;

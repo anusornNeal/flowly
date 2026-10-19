@@ -8,6 +8,13 @@ export type Project = {
  uiContext: Record<string, unknown>; createdAt: string; updatedAt: string;
 };
 export type ChecklistItem = { id: string; text: string; done: boolean };
+// Requirement/reference images have no Screenshot or QA lifecycle.
+export type TaskAttachment = {
+ id:string;projectId:string;taskId:string;name:string;mime:'image/png'|'image/jpeg'|'image/webp';
+ sizeBytes:number;width:number;height:number;sha256:string;sortOrder:number;altText?:string;
+ createdAt:string;createdBy:string;deletedAt?:string;
+};
+export type TaskAttachmentDto = TaskAttachment & {fileUrl:string;thumbnailUrl:string};
 export type RiskFactors = {
  securityOrPermissions?: boolean; destructiveData?: boolean; schemaMigration?: boolean;
  publicContract?: boolean; sharedRuntimeConfig?: boolean; systemWide?: boolean; irreversible?: boolean;

@@ -2,6 +2,8 @@ import type { Actor, BrowserStep, PreviewRevision, QaCase, ScreenSpec, Screensho
 import { DomainError } from './models.js';
 import { LocalStore } from '../../db/src/store.js';
 import { Tasks } from './tasks.js';
+import { TaskAttachments, validateAttachmentTask } from './taskAttachments.js';
+import { readAttachmentFiles } from './taskAttachmentFiles.js';
 import { Engineering } from './engineering.js';
 import { SkillRegistry } from './skillRegistry.js';
 import { routeSkills } from './skillRouter.js';
@@ -21,10 +23,12 @@ import { runTaskBatch } from './taskBatch.js';
 import { compareImage, inspectRendered, renderApproved, targetScreen } from '../../capture/src/renderer.js';
 
 export class FlowlyApp {
+ readonly attachments:TaskAttachments;
  readonly store:LocalStore;readonly tasks:Tasks;readonly engineering:Engineering;readonly skills:SkillRegistry;readonly sessions:SkillSessions;readonly provenance:SkillProvenance;readonly learning:SkillLearning;readonly previews:Previews;readonly images:Images;readonly recorder:BrowserRecorder;
  constructor(root?:string){
   this.store=new LocalStore(root);
   this.tasks=new Tasks(this.store);
+  this.attachments=new TaskAttachments(this.store,this.tasks);
   this.engineering=new Engineering(this.store);
   this.skills=new SkillRegistry(this.store);
   this.sessions=new SkillSessions(this.store);
@@ -74,6 +78,7 @@ const OPERATIONS=[
  'skills.audit.record','skills.audit.list','skills.audit.report',
  'skills.learning.propose','skills.learning.list','skills.learning.get','skills.learning.decide','skills.learning.rollback',
  'task.list','task.create','task.get','task.detail','task.context','task.batch','task.update','task.transition','task.tests',
+ 'task.create-with-attachments','task.attachment.list','task.attachment.add','task.attachment.remove',
  'task.checklist','task.subtask','task.review','task.bugs','task.bug.create','task.bug.resolve','task.post-done-bug',
  'task.history','task.blockers','engineering.size','engineering.decision.report','engineering.decision.resolve',
  'engineering.implementation.report','engineering.git.inspect','engineering.parallel.plan','engineering.parallel.next','engineering.parallel.status',
@@ -141,6 +146,17 @@ export async function execute(app:FlowlyApp,op:string,data:Record<string,any>,ac
   case 'project.update':return t.updateProject(String(data.id),data,actor);
   case 'task.list':return t.listTasks(String(data.projectId));
   case 'task.create':return t.createTask(data as Parameters<typeof t.createTask>[0],actor);
+  case 'task.create-with-attachments':{
+   const task=validateAttachmentTask(data.task);t.project(task.projectId);
+   if(task.parentId)app.attachments.scope(task.parentId,task.projectId,true);
+   return app.attachments.create({task,idempotencyKey:data.idempotencyKey},readAttachmentFiles(data.files),actor);
+  }
+  case 'task.attachment.list':return app.attachments.list(data.id,data.projectId);
+  case 'task.attachment.add':{
+   app.attachments.scope(data.id,data.projectId,true);
+   return app.attachments.add(data.id,{projectId:data.projectId,idempotencyKey:data.idempotencyKey},readAttachmentFiles(data.files),actor);
+  }
+  case 'task.attachment.remove':return app.attachments.remove(data.id,data.projectId,actor);
   case 'task.subtask':return t.createTask({...data,parentId:String(data.parentId)} as Parameters<typeof t.createTask>[0],actor);
   case 'task.get':return t.task(String(data.id));
   case 'task.detail':return t.taskDetail(String(data.id));
@@ -149,7 +165,7 @@ export async function execute(app:FlowlyApp,op:string,data:Record<string,any>,ac
    const detail=t.taskDetail(String(data.id));
    const previewRefs=p.list(detail.task.projectId).filter(v=>v.taskId===detail.task.id)
     .map(v=>({previewId:v.id,approvedRevisionId:v.approvedRevisionId,draftUpdatedAt:v.updatedAt}));
-   return {task:detail.task,children:detail.children.map(c=>({id:c.id,status:c.status,title:c.title})),
+   return {task:detail.task,attachments:detail.attachments,children:detail.children.map(c=>({id:c.id,status:c.status,title:c.title})),
     checklist:detail.task.checklist,risk:detail.risk,blockers:detail.blockers,
     bugs:detail.bugs.map(b=>({id:b.id,status:b.status,origin:b.origin})),
     qa:detail.cases.map(c=>({id:c.id,screenId:c.screenId,stateId:c.stateId,required:c.required,verdict:c.verdict||'PENDING',revisionId:c.revisionId})),

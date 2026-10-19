@@ -7,6 +7,10 @@ export type OperationContract={operation:string;parameters:Record<string,Param>;
 const param=(type:Param['type']='string'):Param=>({type});
 const id=param(),projectId=param(),taskId=param(),previewId=param();
 const FIELDS:Record<string,Record<string,Param>>={
+ 'task.create-with-attachments':{task:param('object'),files:{type:'array',description:'Local image paths or {path,name?,mime?,altText?}; HTTP uses multipart files instead'},idempotencyKey:param()},
+ 'task.attachment.list':{id,projectId},
+ 'task.attachment.add':{id,projectId,files:{type:'array',description:'Local image paths or {path,name?,mime?,altText?}'},idempotencyKey:param()},
+ 'task.attachment.remove':{id,projectId},
  'project.list':{},
  'bootstrap':{projectId,sessionId:param()},
  'skills.preflight':{projectId,taskId,operation:{type:'string',enum:['task.transition','task.review','qa.verdict','preview.approve','engineering.decision.resolve','engineering.parallel.status']},to:{type:'string',enum:['backlog','todo','in-progress','ready-for-review','done']},reason:param(),forceDone:param('boolean')},
@@ -78,6 +82,9 @@ const FIELDS:Record<string,Record<string,Param>>={
  'job.start':{projectId,operation:param(),idempotencyKey:param(),input:param('object'),payload:param('object')},'job.status':{id},'job.list':{projectId,offset:param('number'),limit:param('number')},'job.retry':{id},'job.cancel':{id}
 };
 const REQUIRED:Record<string,string[]>={
+ 'task.create-with-attachments':['task','files','idempotencyKey'],
+ 'task.attachment.list':['id','projectId'],'task.attachment.add':['id','projectId','files','idempotencyKey'],
+ 'task.attachment.remove':['id','projectId'],
  'skills.preflight':['projectId','taskId','operation'],
  'skills.session.claim':['projectId','taskId','streamId','sessionId'],
  'skills.session.list':['projectId'],'skills.session.renew':['projectId','id','sessionId'],
@@ -117,7 +124,7 @@ export function describeOperation(operation:string):OperationContract {
  if(!Object.hasOwn(FIELDS,operation))throw new DomainError('UNKNOWN_OPERATION','Unknown Flowly operation',404);
  const required=new Set(REQUIRED[operation]||[]);
  return {operation,parameters:Object.fromEntries(Object.entries(FIELDS[operation]!).map(([name,v])=>[name,{...v,required:required.has(name)}])),
-  readOnly:READ_ONLY.has(operation),dryRun:(DRY_RUN_OPERATIONS as readonly string[]).includes(operation),
+  readOnly:READ_ONLY.has(operation)||operation==='task.attachment.list',dryRun:(DRY_RUN_OPERATIONS as readonly string[]).includes(operation),
   transport:PERSISTENT.has(operation)?'persistent-api':'local'};
 }
 export function allContracts(){return Object.keys(FIELDS).map(describeOperation);}

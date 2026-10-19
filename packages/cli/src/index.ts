@@ -10,7 +10,7 @@ import { DomainError } from '../../core/src/models.js';
 
 const VERSION=1;
 const PERSISTENT_BROWSER_OPERATIONS=new Set(['recorder.start','recorder.stop','recorder.replay','recorder.capture','recorder.session.reset','job.start','job.status','job.list','job.retry','job.cancel']);
-const HELP='flowly <operation> [--field=value] [--input=@file.json|-] [--dry-run] [--limit=N --offset=N] [--actor=agent]';
+const HELP='flowly <operation> [--field=value] [--input=@file.json|-] [--dry-run] [--limit=N --offset=N] [--actor=agent]. Images: task.create-with-attachments or task.attachment.add --files=[local paths] --idempotencyKey=unique-key; see describe for required fields.';
 function output(data:unknown,compact=false){console.log(JSON.stringify(data,null,compact?0:2));}
 function validObject(value:unknown,label:string):Record<string,unknown>{
  if(value===null||typeof value!=='object'||Array.isArray(value))

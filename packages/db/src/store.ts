@@ -6,10 +6,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { records, settings, auditLog } from './schema.js';
-import type { Activity, BugThread, Comparison, Preview, PreviewRevision, Project, QaCase, Screenshot, TaskRecord, JobRecord } from '../../core/src/models.js';
+import type { Activity, BugThread, Comparison, Preview, PreviewRevision, Project, QaCase, Screenshot, TaskRecord, JobRecord, TaskAttachment } from '../../core/src/models.js';
 
-export type Kind = 'project' | 'task' | 'bug' | 'preview' | 'revision' | 'qa' | 'screenshot' | 'comparison' | 'recipe' | 'job';
-export type Entity = Project | TaskRecord | BugThread | Preview | PreviewRevision | QaCase | Screenshot | Comparison | JobRecord | { id: string; projectId: string; screenId: string; steps: unknown[] };
+export type Kind = 'project' | 'task' | 'bug' | 'preview' | 'revision' | 'qa' | 'screenshot' | 'comparison' | 'recipe' | 'job' | 'taskAttachment';
+export type Entity = TaskAttachment | Project | TaskRecord | BugThread | Preview | PreviewRevision | QaCase | Screenshot | Comparison | JobRecord | { id: string; projectId: string; screenId: string; steps: unknown[] };
 type DataRecord = Entity & { id: string; projectId?: string; taskId?: string; status?: string; updatedAt?: string };
 export class LocalStore {
  readonly root: string;
@@ -30,6 +30,9 @@ export class LocalStore {
    'CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)',
    'CREATE TABLE IF NOT EXISTS capture_keys(source_id TEXT NOT NULL,capture_id TEXT NOT NULL,screenshot_id TEXT NOT NULL,PRIMARY KEY(source_id,capture_id))',
    'CREATE TABLE IF NOT EXISTS operation_replays(project_id TEXT NOT NULL,idempotency_key TEXT NOT NULL,request_hash TEXT NOT NULL,response TEXT NOT NULL,PRIMARY KEY(project_id,idempotency_key))',
+   // Additive, restart-safe migration. Bytes and metadata commit/rollback together;
+   // no filesystem staging, orphan recovery, or screenshot cleanup coupling.
+   "CREATE TABLE IF NOT EXISTS task_attachment_files(id TEXT PRIMARY KEY,kind TEXT NOT NULL DEFAULT 'taskAttachment' CHECK(kind='taskAttachment'),image BLOB NOT NULL,thumbnail BLOB NOT NULL,FOREIGN KEY(kind,id) REFERENCES records(kind,id) ON DELETE CASCADE)",
    'CREATE TABLE IF NOT EXISTS audit_log(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,task_id TEXT,action TEXT NOT NULL,actor TEXT NOT NULL,channel TEXT NOT NULL,at TEXT NOT NULL,body TEXT NOT NULL)',
    'CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_log(project_id)',
    'CREATE INDEX IF NOT EXISTS idx_audit_task ON audit_log(task_id)'
@@ -72,6 +75,16 @@ export class LocalStore {
  }
  remove(kind: Kind, id: string): void {
   this.orm.delete(records).where(and(eq(records.kind,kind),eq(records.id,id))).run();
+ }
+ putAttachmentFile(id:string,image:Buffer,thumbnail:Buffer):void {
+  this.raw.prepare('INSERT INTO task_attachment_files(id,image,thumbnail) VALUES(?,?,?)').run(id,image,thumbnail);
+ }
+ attachmentFile(id:string,thumbnail=false):Buffer|undefined {
+  const row=this.raw.prepare('SELECT '+(thumbnail?'thumbnail':'image')+' AS bytes FROM task_attachment_files WHERE id=?').get(id) as {bytes:Buffer}|undefined;
+  return row?.bytes;
+ }
+ removeAttachmentFile(id:string):void {
+  this.raw.prepare('DELETE FROM task_attachment_files WHERE id=?').run(id);
  }
  replayOperation(projectId:string,key:string):{requestHash:string;result:unknown}|undefined {
   const found=this.raw.prepare('SELECT request_hash AS requestHash,response FROM operation_replays WHERE project_id=? AND idempotency_key=?').get(projectId,key) as {requestHash:string;response:string}|undefined;
