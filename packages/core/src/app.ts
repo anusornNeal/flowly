@@ -148,7 +148,9 @@ export async function execute(app:FlowlyApp,op:string,data:Record<string,any>,ac
   case 'task.create':return t.createTask(data as Parameters<typeof t.createTask>[0],actor);
   case 'task.create-with-attachments':{
    const task=validateAttachmentTask(data.task);t.project(task.projectId);
-   if(task.parentId)app.attachments.scope(task.parentId,task.projectId,true);
+   // Check project ownership before loading files, but defer mutability until
+   // after the attachment service has checked an exact idempotent receipt.
+   if(task.parentId)app.attachments.scope(task.parentId,task.projectId);
    return app.attachments.create({task,idempotencyKey:data.idempotencyKey},readAttachmentFiles(data.files),actor);
   }
   case 'task.attachment.list':return app.attachments.list(data.id,data.projectId);
