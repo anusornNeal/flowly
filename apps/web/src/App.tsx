@@ -288,7 +288,7 @@ export default function App(){
         ['Ready for review',counts['ready-for-review']||0,'Awaiting review or QA',Bell],
         ['QA Passed',cases.filter(c=>c.verdict==='PASS').length,'of '+cases.length+' current cases',ShieldCheck]
        ] as const).map(([title,count,sub,Icon])=><button className="stat-card" key={String(title)} onClick={()=>setPage(title==='QA Passed'?'preview':'board')}>
-       <div><span>{String(title)}</span><Icon size={20}/></div><strong>{String(count).padStart(2,'0')}</strong><small>{String(sub)}</small></button>)}
+       <div><span>{String(title)}</span><Icon size={20}/></div><strong>{String(count)}</strong><small>{String(sub)}</small></button>)}
      </section>
      <div className="overview-grid">
       <section className="panel"><header className="panel-head"><div><div className="mini-eyebrow">DELIVERY</div><h2>Workflow overview</h2><p>Current task distribution</p></div></header>
